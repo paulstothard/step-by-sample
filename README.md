@@ -1,49 +1,72 @@
 # step-by-sample
 
-A lightweight Bash-first pattern for bioinformatics workflow steps where:
+A Bash-first pattern for per-sample workflow steps where you always:
 
-- one step reads from one input folder
-- one step writes to one output folder
-- each sample is a subfolder
-- each sample gets its own `run.log`
-- each sample gets either `.done` or `.failed`
+1. generate one job script per sample,
+2. collect them in a run list,
+3. execute that run list locally or on Slurm.
 
-This is not a workflow engine. It is a small, transparent system built around:
+Each sample writes its own `run.log` and ends with either `.done` or `.failed` in its output folder. The design stays intentionally small: no workflow engine, no background controller, just generated scripts plus helper commands.
 
-- a single self-contained local execution pattern
-- an optional "build job scripts + run list" pattern
-- stable helper scripts for local execution, Slurm array execution, and summaries
+## Core Model
 
-The goal is readability, editability, restartability, and easy reruns of failed jobs.
+Every workflow step follows the same structure:
 
----
+- one input directory,
+- one output directory,
+- one subdirectory per sample,
+- one generated job script per sample,
+- one run list file containing those job script paths.
+
+This keeps reruns, debugging, and local-vs-Slurm execution consistent.
 
 ## Quickstart
 
-1. **Choose your approach:**
+1. Copy the template:
 
-   - **Approach 1 (Simple):** Copy `examples/single-local-template.sh` for immediate local execution
-   - **Approach 2 (Flexible):** Copy `examples/build-jobs-template.sh` for job generation + flexible execution
+```bash
+cp examples/build-jobs-template.sh build-my-step.sh
+```
 
-2. **Edit the template:**
+1. Edit the template:
 
-   - Set `IN` and `OUT` directories
-   - Customize the "EDIT THIS SECTION" blocks for your input files and command
+- set `IN`, `OUT`, `JOB_DIR`, and `LIST`,
+- define how to find the sample input files,
+- replace the example command with the real tool invocation.
 
-3. **Run:**
+1. Generate jobs:
 
-   - **Approach 1:** `./your-script.sh` (executes immediately)
-   - **Approach 2:** Generate jobs → execute with `helpers/run-list-local.sh` or `helpers/run-list-slurm.sh`
+```bash
+./build-my-step.sh
+```
 
-4. **Check results:**
-   - Use `helpers/summarize-status.sh OUT_DIR` to see done/failed counts
-   - Rerun failed samples by setting `MODE="failed"` (Approach 2) or `FORCE=1` (Approach 1)
+1. Execute the run list locally:
 
----
+```bash
+helpers/run-list-local.sh run-quast.txt 4
+```
 
-## Folder convention
+1. Or execute the same run list on Slurm:
 
-At a given step, the input and output folders look like this:
+```bash
+helpers/run-list-slurm.sh run-quast.txt \
+  --account my_account \
+  --partition cpu \
+  --time 08:00:00 \
+  --mem 16G \
+  --cpus 8 \
+  --array-max 20
+```
+
+1. Check results:
+
+```bash
+helpers/summarize-status.sh quast_output
+```
+
+## Folder Convention
+
+At a given step, input and output usually look like this:
 
 ```text
 IN/
@@ -63,81 +86,58 @@ OUT/
     ...
 ```
 
-This keeps filenames simple inside each sample folder and avoids collisions across steps.
+## Workflow Template
 
----
+The only workflow template is [examples/build-jobs-template.sh](examples/build-jobs-template.sh).
 
-## Approach 1: single self-contained local script
+It generates:
 
-This is the simplest pattern for immediate local execution. It supports:
+- a job directory such as `jobs-quast/`,
+- a run list such as `run-quast.txt`,
+- one executable script per sample.
 
-- one input folder and one output folder
-- sample subfolders with per-sample logs
-- `.done` and `.failed` markers
-- `FORCE` to rerun completed samples
-- `DRY` for dry runs
-- local parallelism with `xargs`
-- clear edit sections for inputs, validation, and commands
-- examples for single files, paired-end reads, plain and Docker commands
+That gives you:
 
-**Template file:** `examples/single-local-template.sh`
+- inspection before execution,
+- easy single-sample reruns,
+- the same generated work unit for local and Slurm execution,
+- selective rebuilds with `MODE=unfinished`, `MODE=failed`, or `MODE=all`,
+- no hidden state beyond filesystem markers and logs.
 
-**Key features:**
+### Template Workflow
 
-- Self-contained: everything in one script
-- Immediate execution: no separate build step
-- Simple: good for quick workflows or testing
-
-**Usage:**
+Generate job scripts:
 
 ```bash
-# Copy and customize the template
-cp examples/single-local-template.sh my-workflow-step.sh
-# Edit IN, OUT, and command sections
-# Run it
-./my-workflow-step.sh
-```
-
----
-
-## Approach 2: build per-sample job scripts and use helper scripts
-
-This is the more flexible approach. Instead of executing immediately, you first generate:
-
-- a step-specific jobs folder such as `jobs-quast/`
-- a run list such as `run-quast.txt`
-
-Each line in the run list is just the path to one per-sample job script.
-
-**Template file:** `examples/build-jobs-template.sh`
-
-**This approach gives you:**
-
-- Built-in dry run: inspect generated job scripts before execution
-- Easy single-sample rerun: `bash jobs-quast/sample2.sh`
-- Flexible execution: same run list works locally or on Slurm
-- Selective reruns: build lists for `MODE=unfinished`, `MODE=failed`, or `MODE=all`
-- No persistent controller: all state in filesystem (`.done`, `.failed`, logs)
-
-### Workflow
-
-**1. Generate job scripts:**
-
-```bash
-# Copy and customize the template
-cp examples/build-jobs-template.sh build-my-step.sh
-# Edit IN, OUT, and command sections
-# Generate jobs
 ./build-my-step.sh
 ```
 
-**2. Execute locally:**
+Inspect what was built:
+
+```bash
+cat run-quast.txt
+ls jobs-quast/
+```
+
+Run one sample directly if needed:
+
+```bash
+bash jobs-quast/sample2.sh
+```
+
+## Execution Helpers
+
+### Local execution
+
+[helpers/run-list-local.sh](helpers/run-list-local.sh) executes a run list with configurable parallelism:
 
 ```bash
 helpers/run-list-local.sh run-quast.txt 4
 ```
 
-**3. Or submit to Slurm:**
+### Slurm execution
+
+[helpers/run-list-slurm.sh](helpers/run-list-slurm.sh) submits the same run list as a Slurm array job:
 
 ```bash
 helpers/run-list-slurm.sh run-quast.txt \
@@ -149,201 +149,145 @@ helpers/run-list-slurm.sh run-quast.txt \
   --array-max 20
 ```
 
-**4. Check results:**
+If your cluster needs environment setup before `module load`, use `--setup-file` and one or more `--module` options:
 
 ```bash
-helpers/summarize-status.sh quast_output
+helpers/run-list-slurm.sh run-quast.txt \
+  --account my_account \
+  --partition cpu \
+  --setup-file /etc/profile.d/modules.sh \
+  --module quast/5.2.0 \
+  --module python/3.11
 ```
 
----
+## Utility Helpers
 
-## Helper Scripts
+- [helpers/validate-step.sh](helpers/validate-step.sh): validate input directory structure before running.
+- [helpers/summarize-status.sh](helpers/summarize-status.sh): report done/failed/other counts.
+- [helpers/repair-failed.sh](helpers/repair-failed.sh): remove `.failed` markers and optionally clean partial outputs.
+- [helpers/common.sh](helpers/common.sh): shared shell utilities for templates and custom scripts.
 
-### Core helpers (for Approach 2)
+## Reruns and Recovery
 
-- **`helpers/run-list-local.sh`** - Execute a run list locally with parallelism
-- **`helpers/run-list-slurm.sh`** - Submit a run list as a Slurm array job
-- **`helpers/summarize-status.sh`** - Scan output directory and report done/failed/other
-
-### Utility helpers (for both approaches)
-
-- **`helpers/validate-step.sh`** - Validate input directory structure before running
-
-  ```bash
-  helpers/validate-step.sh shovill_output
-  ```
-
-- **`helpers/repair-failed.sh`** - Clean up failed samples for rerun
-
-  ```bash
-  helpers/repair-failed.sh quast_output           # Remove .failed markers
-  helpers/repair-failed.sh quast_output --clean-outputs  # Also remove partial outputs
-  ```
-
-- **`helpers/common.sh`** - Shared utility functions (sourced by templates)
-  - `validate_sample_input()` - Check single file exists
-  - `validate_paired_input()` - Check paired-end files exist
-  - `find_paired_reads()` - Find R1/R2 files safely
-  - `format_time()` - Human-readable elapsed time
-  - `count_samples()` - Count samples in directory
-
-All helper scripts support `--help` for detailed usage information.
-
----
-
-## Reruns
-
-### Approach 1: Single local script
-
-**Rerun all failed samples:**
-
-```bash
-FORCE=1 ./my-workflow-step.sh
-```
-
-**Dry run to see what would run:**
-
-```bash
-DRY=1 ./my-workflow-step.sh
-```
-
-### Approach 2: Job scripts
-
-**1. Rerun one specific sample:**
+Rerun one sample directly:
 
 ```bash
 bash jobs-quast/sample2.sh
 ```
 
-**2. Rebuild run list for failed samples only:**
+Rebuild the run list for failed samples only:
 
 ```bash
-# Edit your build script to set MODE="failed"
 MODE="failed" ./build-my-step.sh
-# Then execute the new list
 helpers/run-list-local.sh run-quast.txt 4
 ```
 
-**3. Rebuild for unfinished samples:**
+Rebuild for unfinished samples:
 
 ```bash
 MODE="unfinished" ./build-my-step.sh
 helpers/run-list-local.sh run-quast.txt 4
 ```
 
-**4. Clean up and rebuild:**
+Clean up failed outputs before rebuilding:
 
 ```bash
-# Remove .failed markers and partial outputs
 helpers/repair-failed.sh quast_output --clean-outputs
-# Rebuild run list
 MODE="unfinished" ./build-my-step.sh
-# Execute
 helpers/run-list-local.sh run-quast.txt 4
 ```
 
----
+Force a full rebuild of all sample jobs:
 
-## Project structure
+```bash
+FORCE=1 ./build-my-step.sh
+```
+
+## Project Structure
 
 ```text
 step-by-sample/
 ├── README.md
 ├── .gitignore
 ├── examples/
-│   ├── single-local-template.sh    # Approach 1: self-contained local
-│   └── build-jobs-template.sh      # Approach 2: job generation
+│   └── build-jobs-template.sh      # Workflow template
 ├── helpers/
 │   ├── common.sh                   # Shared utility functions
 │   ├── run-list-local.sh           # Local execution runner
-│   ├── run-list-slurm.sh           # Slurm array job submitter
+│   ├── run-list-slurm.sh           # Slurm array submitter
 │   ├── summarize-status.sh         # Status reporter
 │   ├── validate-step.sh            # Input validation
 │   └── repair-failed.sh            # Failed sample cleanup
 └── tests/
     ├── run-all-tests.sh            # Main test runner
-    ├── test-01-approach1.sh        # Test Approach 1
-    ├── test-02-approach2.sh        # Test Approach 2
-    ├── test-03-helpers.sh          # Test utilities
-    ├── test-04-edge-cases.sh       # Test edge cases
-    ├── test-05-reruns.sh           # Test rerun workflows
+    ├── test-01-workflow.sh         # Core workflow template tests
+    ├── test-02-helpers.sh          # Helper utility tests
+    ├── test-03-edge-cases.sh       # Edge case tests
+    ├── test-04-reruns.sh           # Rerun and recovery tests
     ├── lib/                        # Test helpers and mocks
     └── mock-slurm/                 # Mock Slurm for local testing
 ```
 
----
-
 ## Testing
 
-A comprehensive test suite is included to validate templates and helpers:
+Run the full suite:
 
 ```bash
-# Run all tests
 cd tests
 ./run-all-tests.sh
+```
 
-# Run with verbose output
+Run with verbose output:
+
+```bash
 ./run-all-tests.sh --verbose
+```
 
-# Run specific test
+Run the quick subset:
+
+```bash
+./run-all-tests.sh --quick
+```
+
+Run a specific file:
+
+```bash
 ./run-all-tests.sh "test-01*"
 ```
 
-**Test coverage:**
+Coverage includes:
 
-- ✓ Both workflow approaches (single-local and build-jobs)
-- ✓ All helper utilities (validate, summarize, repair)
-- ✓ Edge cases (spaces in names, special chars, large sample counts)
-- ✓ Rerun scenarios and failure recovery
-- ✓ Mock Slurm submission for local testing
+- core workflow generation and execution,
+- helper utilities,
+- rerun and recovery behavior,
+- edge cases such as spaces, symlinks, and large sample counts,
+- local testing of Slurm submission behavior.
 
-See [tests/README.md](tests/README.md) for detailed test documentation.
-
-**Run time:** Complete suite runs in ~30-50 seconds
-
----
-
-## Notes
-
-- All scripts use modern Bash conventions:
-  - `#!/usr/bin/env bash`
-  - `set -euo pipefail`
-  - `[[ ]]` for conditionals
-  - Explicit argument checking
-  - `--help` support
-- Templates handle spaces in filenames safely using null-delimited streams
-- Paired-end file validation checks both existence and non-empty patterns
-- Input/output paths are converted to absolute paths for safety
-- The Slurm helper submits and exits; jobs create their own status markers
-- Docker examples assume mounting `$(pwd)` to `/work` in containers
-- All templates include timing information and sample counts
-- Helper scripts are version-stamped for tracking changes
-
----
+See [tests/README.md](tests/README.md) for the full testing guide.
 
 ## Best Practices
 
-**Before running:**
+Before running:
 
-1. Validate your input structure: `helpers/validate-step.sh INPUT_DIR`
-2. Test with a dry run: `DRY=1 ./my-script.sh` (Approach 1)
-3. Inspect generated job scripts before execution (Approach 2)
+1. Validate the input structure with `helpers/validate-step.sh INPUT_DIR`.
+2. Generate the per-sample job scripts and inspect them before executing.
+3. Test locally on a small subset before using Slurm.
 
-**During development:**
+During development:
 
-1. Test on a small subset of samples first
-2. Check logs in `OUTPUT_DIR/sample_name/run.log`
-3. Use `helpers/summarize-status.sh` frequently
+1. Keep your edited template under version control.
+2. Check `OUTPUT_DIR/sample_name/run.log` first when debugging.
+3. Use `helpers/summarize-status.sh` frequently while iterating.
 
-**For reruns:**
+For production:
 
-1. Use `helpers/repair-failed.sh` to clean up failed samples
-2. Rebuild with `MODE="failed"` or `MODE="unfinished"`
-3. Consider `--clean-outputs` if partial outputs cause issues
+1. Set explicit Slurm resources instead of relying on defaults.
+2. Use `--setup-file` and `--module` when your cluster environment requires it.
+3. Keep rerun behavior explicit by rebuilding with `MODE=failed` or `MODE=unfinished`.
 
-**For production:**
+## Notes
 
-1. Keep templates under version control with your project
-2. Document customizations in comments
-3. Test locally before submitting to Slurm
-4. Use appropriate resource requests for Slurm jobs
+- Scripts use `#!/usr/bin/env bash` and `set -euo pipefail`.
+- Generated run lists contain absolute job script paths so they can be executed from any working directory.
+- The Slurm helper submits and exits; per-sample job scripts create the status markers.
+- Docker examples in the template assume mounting `$(pwd)` to `/work`.

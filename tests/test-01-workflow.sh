@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test Approach 2: build-jobs + execution
+# Test the primary step-by-sample workflow
 # Tests the ACTUAL build-jobs-template.sh, not a copy
 
 set -euo pipefail
@@ -11,10 +11,10 @@ source "$SCRIPT_DIR/lib/mock-commands.sh"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TEMPLATE="$PROJECT_ROOT/examples/build-jobs-template.sh"
 
-print_header "Testing Approach 2: Build Jobs + Execution (Real Template)"
+print_header "Testing Workflow Template + Execution Helpers"
 
 # Setup
-setup_test_dir "approach2"
+setup_test_dir "workflow"
 trap cleanup_test_dir EXIT
 
 # Create executable mock commands in test directory
@@ -69,9 +69,11 @@ run_build_template "mock_success" "$IN" "$OUT" "$JOB_DIR" "$LIST" "all" 0 >/dev/
 TEST1_OUT="$OUT"
 TEST1_JOB_DIR="$JOB_DIR"
 TEST1_LIST="$LIST"
+first_job="$(head -n 1 "$LIST")"
 
 assert_file_exists "$LIST" \
   && assert_count_equals "$(wc -l <"$LIST" | tr -d ' ')" 3 "Should create 3 job scripts" \
+  && assert_command_success "[[ \"$first_job\" = /* ]]" "Run list entries should be absolute paths" \
   && assert_file_exists "$JOB_DIR/sample_01.sh" \
   && assert_file_exists "$JOB_DIR/sample_02.sh" \
   && assert_file_exists "$JOB_DIR/sample_03.sh" \
@@ -83,7 +85,7 @@ assert_file_exists "$LIST" \
 start_test "Execute jobs locally with run-list-local.sh"
 
 # Use jobs from previous test
-if bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$TEST1_LIST" 2 >/dev/null 2>&1; then
+if (cd /tmp && bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$TEST1_LIST" 2 >/dev/null 2>&1); then
   assert_count_equals "$(count_done "$TEST1_OUT")" 3 "All 3 samples should complete" \
     && assert_count_equals "$(count_failed "$TEST1_OUT")" 0 "No failures expected" \
     && assert_file_exists "$TEST1_OUT/sample_01/.done" \
@@ -162,14 +164,36 @@ else
 fi
 
 #############################################################################
-# Test 6: Mock Slurm submission
+# Test 6: Failed generated job writes .failed marker
 #############################################################################
-start_test "Submit jobs via mock sbatch"
+start_test "Failed generated job writes .failed marker"
 
 IN="$TEST_DIR/test6_in"
 OUT="$TEST_DIR/test6_out"
 JOB_DIR="$TEST_DIR/test6_jobs"
 LIST="$TEST_DIR/test6_list.txt"
+
+create_mock_samples "$IN" 1 single
+
+run_build_template "mock_fail" "$IN" "$OUT" "$JOB_DIR" "$LIST" "all" 0 >/dev/null 2>&1
+
+if bash "$JOB_DIR/sample_01.sh" >/dev/null 2>&1; then
+  fail_test "Generated job should fail when the command fails"
+else
+  assert_file_exists "$OUT/sample_01/.failed" \
+    && assert_file_exists "$OUT/sample_01/run.log" \
+    && pass_test
+fi
+
+#############################################################################
+# Test 7: Mock Slurm submission
+#############################################################################
+start_test "Submit jobs via mock sbatch"
+
+IN="$TEST_DIR/test7_in"
+OUT="$TEST_DIR/test7_out"
+JOB_DIR="$TEST_DIR/test7_jobs"
+LIST="$TEST_DIR/test7_list.txt"
 
 create_mock_samples "$IN" 2 single
 
@@ -195,6 +219,63 @@ if echo "$output" | grep -q "Submitted batch job"; then
     && pass_test
 else
   fail_test "Slurm submission failed"
+fi
+
+#############################################################################
+# Test 8: Slurm setup file and modules are applied
+#############################################################################
+start_test "Slurm setup file and modules are applied"
+
+JOB_DIR="$TEST_DIR/test8_jobs"
+LIST="$TEST_DIR/test8_list.txt"
+SETUP_FILE="$TEST_DIR/test8_setup.sh"
+MODULE_LOG="$TEST_DIR/test8_modules.log"
+RESULT_FILE="$TEST_DIR/test8_result.txt"
+LOG_DIR="$TEST_DIR/test8_slurm_logs"
+
+mkdir -p "$JOB_DIR"
+
+cat >"$SETUP_FILE" <<EOF
+#!/usr/bin/env bash
+export SETUP_READY=1
+export MODULE_LOG="$MODULE_LOG"
+export RESULT_FILE="$RESULT_FILE"
+module() {
+  if [[ "\$1" == "load" ]]; then
+    echo "\$2" >> "$MODULE_LOG"
+    return 0
+  fi
+  echo "Unsupported module action: \$*" >&2
+  return 1
+}
+export -f module
+EOF
+chmod +x "$SETUP_FILE"
+
+cat >"$JOB_DIR/check-env.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${SETUP_READY:-}" == "1" ]]
+grep -qx "tool/1.0" "$MODULE_LOG"
+echo "ok" > "$RESULT_FILE"
+EOF
+chmod +x "$JOB_DIR/check-env.sh"
+
+printf '%s\n' "$JOB_DIR/check-env.sh" >"$LIST"
+
+output=$(bash "$PROJECT_ROOT/helpers/run-list-slurm.sh" "$LIST" \
+  --log-dir "$LOG_DIR" \
+  --setup-file "$SETUP_FILE" \
+  --module "tool/1.0" 2>&1)
+
+if echo "$output" | grep -q "Submitted batch job"; then
+  sleep 1
+
+  assert_file_exists "$RESULT_FILE" \
+    && assert_log_contains "$MODULE_LOG" "tool/1.0" "Requested module should be loaded" \
+    && pass_test
+else
+  fail_test "Slurm setup-file submission failed"
 fi
 
 # Print summary

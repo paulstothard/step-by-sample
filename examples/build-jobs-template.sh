@@ -62,6 +62,11 @@ fi
 IN="$(cd "$IN" && pwd)"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
+mkdir -p "$(dirname "$JOB_DIR")"
+JOB_DIR="$(cd "$(dirname "$JOB_DIR")" && pwd)/$(basename "$JOB_DIR")"
+mkdir -p "$JOB_DIR"
+mkdir -p "$(dirname "$LIST")"
+LIST="$(cd "$(dirname "$LIST")" && pwd)/$(basename "$LIST")"
 
 # Count and display samples
 n_total=$(find "$IN" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
@@ -69,7 +74,6 @@ echo "Found $n_total samples in $IN"
 echo "Building jobs for MODE=$MODE"
 echo
 
-mkdir -p "$JOB_DIR"
 : >"$LIST"
 
 while IFS= read -r -d '' sample_dir; do
@@ -206,7 +210,7 @@ fi
 
 echo "START \$sample"
 
-{
+if {
   echo "=== \$sample ==="
   date
   echo "Sample dir: \$sample_dir"
@@ -252,11 +256,7 @@ echo "START \$sample"
   #   -o "\$out_dir/R1.fastq.gz" \
   #   -O "\$out_dir/R2.fastq.gz"
 
-} >"\$log" 2>&1
-
-status=\$?
-
-if [ \$status -eq 0 ]; then
+} >"\$log" 2>&1; then
   : > "\$done"
   rm -f "\$fail"
   echo "DONE  \$sample"

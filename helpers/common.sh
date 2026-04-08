@@ -2,8 +2,6 @@
 # Common functions for step-by-sample workflows
 # Source this file in your templates to use shared validation and utilities
 
-VERSION="1.0.0"
-
 # Validate that a single input file exists
 # Usage: validate_sample_input "$file_path" "$sample_name" "$fail_marker_path"
 # Returns: 0 if valid, 1 if invalid
@@ -78,8 +76,10 @@ to_absolute_path() {
     echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
   else
     # Path doesn't exist yet, try to resolve directory
-    local dir="$(dirname "$path")"
-    local base="$(basename "$path")"
+    local dir
+    local base
+    dir="$(dirname "$path")"
+    base="$(basename "$path")"
     if [[ -d "$dir" ]]; then
       echo "$(cd "$dir" && pwd)/$base"
     else

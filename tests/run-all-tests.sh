@@ -16,7 +16,7 @@ Description:
   Run all tests or a subset matching a pattern.
 
 Options:
-  --quick       Run only quick/essential tests (skip slow tests)
+  --quick       Run only quick/essential tests (skip slower workflow stress tests)
   --verbose     Show detailed output for each test
   --help, -h    Show this help
 
@@ -29,7 +29,7 @@ Examples:
   run-all-tests.sh --verbose          # Run with verbose output
   run-all-tests.sh --quick            # Run quick subset
   run-all-tests.sh "test-01*"         # Run only test-01 files
-  run-all-tests.sh "test-03*"         # Run only helper tests
+  run-all-tests.sh "test-02*"         # Run only helper tests
 
 Exit Code:
   0   All tests passed
@@ -75,7 +75,7 @@ if [[ "$QUICK_MODE" -eq 1 ]]; then
   filtered_test_scripts=()
   for test_script in "${test_scripts[@]}"; do
     case "$(basename "$test_script")" in
-      test-04-* | test-05-*) ;;
+      test-03-* | test-04-*) ;;
       *)
         filtered_test_scripts+=("$test_script")
         ;;
@@ -104,7 +104,7 @@ FAILED_TEST_FILES=0
 START_TIME=$(date +%s)
 
 if [[ "$QUICK_MODE" -eq 1 ]]; then
-  echo "Quick mode: skipping slower test files (test-04, test-05)"
+  echo "Quick mode: skipping slower test files (test-03, test-04)"
   echo
 fi
 

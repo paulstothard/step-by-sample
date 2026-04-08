@@ -243,7 +243,7 @@ assert_count_equals "$final_done" 3 "After recovery, all should be done" \
   && pass_test
 
 #############################################################################
-# Test 6: FORCE in Approach 2
+# Test 6: FORCE rebuilds all samples
 #############################################################################
 start_test "FORCE=1 rebuilds all samples regardless of status"
 

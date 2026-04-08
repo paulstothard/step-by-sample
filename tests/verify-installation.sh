@@ -12,11 +12,10 @@ echo
 # Check test scripts exist
 tests=(
   "run-all-tests.sh"
-  "test-01-approach1.sh"
-  "test-02-approach2.sh"
-  "test-03-helpers.sh"
-  "test-04-edge-cases.sh"
-  "test-05-reruns.sh"
+  "test-01-workflow.sh"
+  "test-02-helpers.sh"
+  "test-03-edge-cases.sh"
+  "test-04-reruns.sh"
 )
 
 echo "Checking test scripts..."
@@ -81,13 +80,6 @@ if [[ -f "$PROJECT_ROOT/helpers/common.sh" ]]; then
   echo "  ✓ helpers/common.sh"
 else
   echo "  ✗ helpers/common.sh (missing)"
-  all_found=0
-fi
-
-if [[ -f "$PROJECT_ROOT/examples/single-local-template.sh" ]]; then
-  echo "  ✓ examples/single-local-template.sh"
-else
-  echo "  ✗ examples/single-local-template.sh (missing)"
   all_found=0
 fi
 

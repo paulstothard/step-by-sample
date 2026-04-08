@@ -20,12 +20,15 @@ Options:
   --cpus N             CPUs per task. Default: 4
   --array-max N        Maximum concurrent array tasks. Default: 20
   --log-dir DIR        Directory for Slurm stdout/stderr logs. Default: slurm-logs
+  --setup-file PATH    Source a shell setup file before each task
+  --module NAME        Load a module before each task (repeatable)
   --keep-script PATH   Write the generated array script to PATH instead of a temp file
   -h, --help           Show this help
 
 Examples:
   run-list-slurm.sh run-quast.txt --account myacct --partition cpu
   run-list-slurm.sh run-quast.txt --time 08:00:00 --mem 16G --cpus 8 --array-max 10
+  run-list-slurm.sh run-quast.txt --setup-file /etc/profile.d/modules.sh --module quast/5.2.0
 EOF
 }
 
@@ -50,6 +53,8 @@ CPUS="${CPUS:-4}"
 ARRAY_MAX="${ARRAY_MAX:-20}"
 LOG_DIR="${LOG_DIR:-slurm-logs}"
 KEEP_SCRIPT=""
+SETUP_FILE=""
+MODULES=()
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -81,6 +86,14 @@ while [[ $# -gt 0 ]]; do
       LOG_DIR="${2:?Missing value for --log-dir}"
       shift 2
       ;;
+    --setup-file)
+      SETUP_FILE="${2:?Missing value for --setup-file}"
+      shift 2
+      ;;
+    --module)
+      MODULES+=("${2:?Missing value for --module}")
+      shift 2
+      ;;
     --keep-script)
       KEEP_SCRIPT="${2:?Missing value for --keep-script}"
       shift 2
@@ -100,6 +113,14 @@ done
 if [[ ! -f "$LIST" ]]; then
   echo "Error: run list not found: $LIST" >&2
   exit 1
+fi
+
+if [[ -n "$SETUP_FILE" ]]; then
+  if [[ ! -f "$SETUP_FILE" ]]; then
+    echo "Error: setup file not found: $SETUP_FILE" >&2
+    exit 1
+  fi
+  SETUP_FILE="$(cd "$(dirname "$SETUP_FILE")" && pwd)/$(basename "$SETUP_FILE")"
 fi
 
 mapfile -t scripts < <(grep -Ev '^[[:space:]]*($|#)' "$LIST")
@@ -136,6 +157,8 @@ fi
 
 ACCOUNT_LINE=""
 PARTITION_LINE=""
+MODULE_REQUESTED=0
+MODULE_LOAD_LINES=""
 
 if [[ -n "$ACCOUNT" ]]; then
   ACCOUNT_LINE="#SBATCH --account=$ACCOUNT"
@@ -143,6 +166,13 @@ fi
 
 if [[ -n "$PARTITION" ]]; then
   PARTITION_LINE="#SBATCH --partition=$PARTITION"
+fi
+
+if [[ ${#MODULES[@]} -gt 0 ]]; then
+  MODULE_REQUESTED=1
+  for module_name in "${MODULES[@]}"; do
+    MODULE_LOAD_LINES+="module load $(printf '%q' "$module_name")"$'\n'
+  done
 fi
 
 cat >"$SBATCH_SCRIPT" <<EOF
@@ -161,12 +191,36 @@ set -euo pipefail
 cd "$SUBMIT_DIR"
 
 LIST="$LIST"
+SETUP_FILE="$SETUP_FILE"
+MODULE_REQUESTED="$MODULE_REQUESTED"
 script=\$(grep -Ev '^[[:space:]]*($|#)' "\$LIST" | sed -n "\${SLURM_ARRAY_TASK_ID}p")
 
 if [[ -z "\$script" ]]; then
   echo "No script found for SLURM_ARRAY_TASK_ID=\$SLURM_ARRAY_TASK_ID" >&2
   exit 1
 fi
+
+if [[ -n "\$SETUP_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "\$SETUP_FILE"
+fi
+
+if [[ "\$MODULE_REQUESTED" -eq 1 ]] && ! command -v module >/dev/null 2>&1; then
+  for candidate in /etc/profile.d/modules.sh /usr/share/Modules/init/bash /etc/profile.d/lmod.sh; do
+    if [[ -f "\$candidate" ]]; then
+      # shellcheck source=/dev/null
+      source "\$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ "\$MODULE_REQUESTED" -eq 1 ]] && ! command -v module >/dev/null 2>&1; then
+  echo "Requested module loads but no module command is available. Use --setup-file to source your cluster environment first." >&2
+  exit 1
+fi
+
+$MODULE_LOAD_LINES
 
 echo "Task:   \$SLURM_ARRAY_TASK_ID"
 echo "Script: \$script"
@@ -185,6 +239,10 @@ echo "Array max:    $ARRAY_MAX"
 echo "Log dir:      $LOG_DIR"
 [[ -n "$ACCOUNT" ]] && echo "Account:      $ACCOUNT"
 [[ -n "$PARTITION" ]] && echo "Partition:    $PARTITION"
+[[ -n "$SETUP_FILE" ]] && echo "Setup file:   $SETUP_FILE"
+if [[ ${#MODULES[@]} -gt 0 ]]; then
+  echo "Modules:      ${MODULES[*]}"
+fi
 echo "Array script: $SBATCH_SCRIPT"
 
 submit_out="$(sbatch "$SBATCH_SCRIPT")"
