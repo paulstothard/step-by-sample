@@ -16,7 +16,7 @@ Arguments:
   OUT_DIR   Output folder for one workflow step.
 
 Examples:
-  summarize-status.sh quast_output
+  summarize-status.sh my-step-output
 EOF
 }
 

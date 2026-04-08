@@ -26,9 +26,9 @@ Options:
   -h, --help           Show this help
 
 Examples:
-  run-list-slurm.sh run-quast.txt --account myacct --partition cpu
-  run-list-slurm.sh run-quast.txt --time 08:00:00 --mem 16G --cpus 8 --array-max 10
-  run-list-slurm.sh run-quast.txt --setup-file /etc/profile.d/modules.sh --module quast/5.2.0
+  run-list-slurm.sh run-my-step.txt --account myacct --partition cpu
+  run-list-slurm.sh run-my-step.txt --time 08:00:00 --mem 16G --cpus 8 --array-max 10
+  run-list-slurm.sh run-my-step.txt --setup-file /etc/profile.d/modules.sh --module my-tool/1.2.3
 EOF
 }
 

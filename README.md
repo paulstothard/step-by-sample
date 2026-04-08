@@ -34,22 +34,28 @@ cp examples/build-jobs-template.sh build-my-step.sh
 - define how to find the sample input files,
 - replace the example command with the real tool invocation.
 
+In practice, you will usually rename all four path settings together so they match your real step. For example, if the step is trimming reads, use names like `trimmed-output`, `jobs-trim-reads`, and `run-trim-reads.txt` instead of the generic placeholders.
+
 1. Generate jobs:
 
 ```bash
 ./build-my-step.sh
 ```
 
+Each run rewrites `run-my-step.txt` from scratch based on the current `MODE` and `FORCE` settings. It does not append to an older list.
+
 1. Execute the run list locally:
 
 ```bash
-helpers/run-list-local.sh run-quast.txt 4
+helpers/run-list-local.sh run-my-step.txt 4
 ```
+
+Here, `4` means run up to four sample jobs in parallel on the local machine. You pass the run-list file, not `JOB_DIR`, because `run-my-step.txt` already contains the paths to the generated job scripts.
 
 1. Or execute the same run list on Slurm:
 
 ```bash
-helpers/run-list-slurm.sh run-quast.txt \
+helpers/run-list-slurm.sh run-my-step.txt \
   --account my_account \
   --partition cpu \
   --time 08:00:00 \
@@ -61,7 +67,7 @@ helpers/run-list-slurm.sh run-quast.txt \
 1. Check results:
 
 ```bash
-helpers/summarize-status.sh quast_output
+helpers/summarize-status.sh my-step-output
 ```
 
 ## Folder Convention
@@ -92,9 +98,11 @@ The only workflow template is [examples/build-jobs-template.sh](examples/build-j
 
 It generates:
 
-- a job directory such as `jobs-quast/`,
-- a run list such as `run-quast.txt`,
+- a job directory such as `jobs-my-step/`,
+- a run list such as `run-my-step.txt`,
 - one executable script per sample.
+
+The run list contains absolute paths to those generated job scripts, which is why the local and Slurm helpers only need the run-list file.
 
 That gives you:
 
@@ -103,6 +111,8 @@ That gives you:
 - the same generated work unit for local and Slurm execution,
 - selective rebuilds with `MODE=unfinished`, `MODE=failed`, or `MODE=all`,
 - no hidden state beyond filesystem markers and logs.
+
+Selection rule: `MODE` controls which samples are normally included, while `FORCE=1` overrides that filtering and rebuilds jobs for all samples.
 
 ### Template Workflow
 
@@ -115,14 +125,14 @@ Generate job scripts:
 Inspect what was built:
 
 ```bash
-cat run-quast.txt
-ls jobs-quast/
+cat run-my-step.txt
+ls jobs-my-step/
 ```
 
 Run one sample directly if needed:
 
 ```bash
-bash jobs-quast/sample2.sh
+bash jobs-my-step/sample2.sh
 ```
 
 ## Execution Helpers
@@ -132,15 +142,17 @@ bash jobs-quast/sample2.sh
 [helpers/run-list-local.sh](helpers/run-list-local.sh) executes a run list with configurable parallelism:
 
 ```bash
-helpers/run-list-local.sh run-quast.txt 4
+helpers/run-list-local.sh run-my-step.txt 4
 ```
+
+In that command, `4` is the number of sample jobs to run at the same time. The helper reads script paths from `run-my-step.txt`, so you do not pass `jobs-my-step/` separately.
 
 ### Slurm execution
 
 [helpers/run-list-slurm.sh](helpers/run-list-slurm.sh) submits the same run list as a Slurm array job:
 
 ```bash
-helpers/run-list-slurm.sh run-quast.txt \
+helpers/run-list-slurm.sh run-my-step.txt \
   --account my_account \
   --partition cpu \
   --time 08:00:00 \
@@ -152,13 +164,15 @@ helpers/run-list-slurm.sh run-quast.txt \
 If your cluster needs environment setup before `module load`, use `--setup-file` and one or more `--module` options:
 
 ```bash
-helpers/run-list-slurm.sh run-quast.txt \
+helpers/run-list-slurm.sh run-my-step.txt \
   --account my_account \
   --partition cpu \
   --setup-file /etc/profile.d/modules.sh \
-  --module quast/5.2.0 \
+  --module my-tool/1.2.3 \
   --module python/3.11
 ```
+
+`--setup-file` is sourced inside each Slurm task, not just in the shell that submits the job. `--array-max` limits how many array tasks may run at once; it does not limit the total number of samples in the submission.
 
 ## Utility Helpers
 
@@ -172,29 +186,31 @@ helpers/run-list-slurm.sh run-quast.txt \
 Rerun one sample directly:
 
 ```bash
-bash jobs-quast/sample2.sh
+bash jobs-my-step/sample2.sh
 ```
 
 Rebuild the run list for failed samples only:
 
 ```bash
 MODE="failed" ./build-my-step.sh
-helpers/run-list-local.sh run-quast.txt 4
+helpers/run-list-local.sh run-my-step.txt 4
 ```
+
+Use `MODE="failed"` when you only want samples with an existing `.failed` marker. Use `MODE="unfinished"` when you want anything not yet marked `.done`, which includes previously failed samples and samples that have never been run.
 
 Rebuild for unfinished samples:
 
 ```bash
 MODE="unfinished" ./build-my-step.sh
-helpers/run-list-local.sh run-quast.txt 4
+helpers/run-list-local.sh run-my-step.txt 4
 ```
 
 Clean up failed outputs before rebuilding:
 
 ```bash
-helpers/repair-failed.sh quast_output --clean-outputs
+helpers/repair-failed.sh my-step-output --clean-outputs
 MODE="unfinished" ./build-my-step.sh
-helpers/run-list-local.sh run-quast.txt 4
+helpers/run-list-local.sh run-my-step.txt 4
 ```
 
 Force a full rebuild of all sample jobs:
@@ -290,4 +306,6 @@ For production:
 - Scripts use `#!/usr/bin/env bash` and `set -euo pipefail`.
 - Generated run lists contain absolute job script paths so they can be executed from any working directory.
 - The Slurm helper submits and exits; per-sample job scripts create the status markers.
+- During job generation, missing inputs usually cause a sample to be skipped because no runnable job can be built. Inside a generated job, missing inputs are treated as a failure and produce `.failed`.
 - Docker examples in the template assume mounting `$(pwd)` to `/work`.
+- The template uses intentionally generic names like `my-step-output`, `jobs-my-step`, and `run-my-step.txt`; rename them to match your real step.

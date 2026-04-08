@@ -19,8 +19,8 @@ Notes:
   - Each script path is executed with: bash "$script"
 
 Examples:
-  run-list-local.sh run-quast.txt
-  run-list-local.sh run-quast.txt 4
+  run-list-local.sh run-my-step.txt
+  run-list-local.sh run-my-step.txt 4
 EOF
 }
 

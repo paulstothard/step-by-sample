@@ -40,10 +40,10 @@ if [[ -f "$SCRIPT_DIR/../helpers/common.sh" ]]; then
 fi
 
 # Default parameters (override via environment variables for testing)
-IN="${IN:-shovill_output}"
-OUT="${OUT:-quast_output}"
-JOB_DIR="${JOB_DIR:-jobs-quast}"
-LIST="${LIST:-run-quast.txt}"
+IN="${IN:-input-samples}"
+OUT="${OUT:-my-step-output}"
+JOB_DIR="${JOB_DIR:-jobs-my-step}"
+LIST="${LIST:-run-my-step.txt}"
 MODE="${MODE:-unfinished}" # unfinished, failed, all
 FORCE="${FORCE:-0}"
 
@@ -92,8 +92,11 @@ while IFS= read -r -d '' sample_dir; do
   if [[ -n "${TEST_COMMAND:-}" ]]; then
     f="$sample_dir/data.txt"
   else
-    # Example 1: one file with a fixed name in each sample folder
-    f="$sample_dir/contigs.fasta"
+    # Placeholder example: one file with a fixed name in each sample folder
+    f="$sample_dir/input.dat"
+
+    # Example: assembly output from a previous step
+    # f="$sample_dir/contigs.fasta"
   fi
 
   # Example 2: paired files with fixed names
@@ -225,11 +228,22 @@ if {
   if [[ -n "\${TEST_COMMAND:-}" ]]; then
     \$TEST_COMMAND "\$out_dir" "\$f" "\$sample"
   else
-    # Example: plain local command
-    quast -o "\$out_dir" "\$f"
+    # Replace this placeholder with your real workflow command.
+    your_tool --input "\$f" --output "\$out_dir/result.txt"
   fi
 
-  # Example: Docker version of the same command
+  # Example: plain local command with Quast
+  # quast -o "\$out_dir" "\$f"
+
+  # Example: Docker version of a generic command
+  # docker run --rm \
+  #   -v "\$(pwd)":/work \
+  #   -u "\$(id -u)":"\$(id -g)" \
+  #   -w /work \
+  #   my-tool-image:latest \
+  #   your_tool --input "\$f" --output "\$out_dir/result.txt"
+
+  # Example: Docker version with Quast
   # docker run --rm \
   #   -v "\$(pwd)":/work \
   #   -u "\$(id -u)":"\$(id -g)" \

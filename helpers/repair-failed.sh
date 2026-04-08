@@ -20,9 +20,9 @@ Options:
   -h, --help        Show this help
 
 Examples:
-  repair-failed.sh quast_output
-  repair-failed.sh quast_output --clean-outputs
-  repair-failed.sh quast_output --dry-run
+  repair-failed.sh my-step-output
+  repair-failed.sh my-step-output --clean-outputs
+  repair-failed.sh my-step-output --dry-run
 
 Notes:
   - Only processes samples with .failed markers
