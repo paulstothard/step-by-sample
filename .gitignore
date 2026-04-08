@@ -1,0 +1,26 @@
+# Job outputs
+jobs-*/
+run-*.txt
+*_output/
+
+# Slurm logs
+slurm-logs/
+*.out
+*.err
+
+# Test artifacts
+tests/OUT_*/
+
+# Status markers in root
+.done
+.failed
+run.log
+
+# Temp files
+*.tmp
+*.temp
+.*.swp
+
+# OS files
+.DS_Store
+Thumbs.db

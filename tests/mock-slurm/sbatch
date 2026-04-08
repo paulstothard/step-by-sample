@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Mock sbatch for testing Slurm submission locally
+# Simulates sbatch behavior without requiring a real Slurm cluster
+
+set -euo pipefail
+
+# Parse arguments to extract the script to run
+SCRIPT=""
+ARRAY_SPEC=""
+LOG_DIR="slurm-logs"
+JOB_ID=$((10000 + RANDOM % 90000))
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --array=*)
+      ARRAY_SPEC="${1#--array=}"
+      shift
+      ;;
+    --output=*)
+      LOG_DIR="$(dirname "${1#--output=}")"
+      shift
+      ;;
+    --error=*)
+      # Ignore, using same as output
+      shift
+      ;;
+    --account=*|--partition=*|--time=*|--mem=*|--cpus-per-task=*)
+      # Ignore resource specifications
+      shift
+      ;;
+    *)
+      # Assume it's the script
+      SCRIPT="$1"
+      shift
+      ;;
+  esac
+done
+
+if [[ -z "$SCRIPT" ]] || [[ ! -f "$SCRIPT" ]]; then
+  echo "Error: no valid script provided" >&2
+  exit 1
+fi
+
+if [[ -z "$ARRAY_SPEC" ]]; then
+  ARRAY_SPEC="$(grep -E '^#SBATCH --array=' "$SCRIPT" | head -n 1 | sed 's/^#SBATCH --array=//')"
+fi
+
+if [[ "$LOG_DIR" == "slurm-logs" ]]; then
+  script_output_line="$(grep -E '^#SBATCH --output=' "$SCRIPT" | head -n 1 || true)"
+  if [[ -n "$script_output_line" ]]; then
+    LOG_DIR="$(dirname "${script_output_line#\#SBATCH --output=}")"
+  fi
+fi
+
+# Print realistic sbatch output
+echo "Submitted batch job $JOB_ID"
+
+# If this is an array job, parse the array specification
+if [[ -n "$ARRAY_SPEC" ]]; then
+  # Parse array like "1-10%5" (tasks 1-10, max 5 concurrent)
+  RANGE="${ARRAY_SPEC%%\%*}"
+  START="${RANGE%-*}"
+  END="${RANGE#*-}"
+  
+  mkdir -p "$LOG_DIR"
+  
+  # Run array tasks sequentially in background
+  # (In real Slurm, this would be parallel on cluster)
+  for task_id in $(seq "$START" "$END"); do
+    (
+      export SLURM_ARRAY_TASK_ID=$task_id
+      export SLURM_ARRAY_JOB_ID=$JOB_ID
+      export SLURM_JOB_ID="${JOB_ID}_${task_id}"
+      
+      # Run the script and capture output
+      bash "$SCRIPT" > "$LOG_DIR/${JOB_ID}_${task_id}.out" 2> "$LOG_DIR/${JOB_ID}_${task_id}.err"
+    ) &
+  done
+  
+  # Wait for all array tasks to complete
+  wait
+else
+  # Single job, not an array
+  mkdir -p "$LOG_DIR"
+  bash "$SCRIPT" > "$LOG_DIR/${JOB_ID}.out" 2> "$LOG_DIR/${JOB_ID}.err" &
+fi
+
+# Exit immediately (like real sbatch)
+exit 0
