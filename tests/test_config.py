@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import pytest
+from rich.text import Text
 from typer.testing import CliRunner
 
 from step_by_sample.cli import app
@@ -33,22 +34,25 @@ def test_main_help_lists_unified_commands() -> None:
 @pytest.mark.parametrize(("command", "example"), COMMAND_HELP.items())
 def test_every_command_has_help_and_an_example(command: str, example: str) -> None:
     result = runner.invoke(app, [command, "--help"])
+    output = Text.from_ansi(result.stdout).plain
     assert result.exit_code == 0
-    assert "Usage:" in result.stdout
-    assert "--help" in result.stdout
-    assert "Example:" in result.stdout
-    assert example in result.stdout
+    assert "Usage:" in output
+    assert "--help" in output
+    assert "Example:" in output
+    assert example in output
 
 
 def test_boolean_help_avoids_noisy_inverse_flags() -> None:
     reset_help = runner.invoke(app, ["reset", "--help"])
     status_help = runner.invoke(app, ["status", "--help"])
+    reset_output = Text.from_ansi(reset_help.stdout).plain
+    status_output = Text.from_ansi(status_help.stdout).plain
     assert reset_help.exit_code == 0
     assert status_help.exit_code == 0
-    assert "--no-dry-run" not in reset_help.stdout
-    assert "--no-clean-outputs" not in reset_help.stdout
-    assert "--no-force-busy" not in reset_help.stdout
-    assert "--no-fail-on-problems" not in status_help.stdout
+    assert "--no-dry-run" not in reset_output
+    assert "--no-clean-outputs" not in reset_output
+    assert "--no-force-busy" not in reset_output
+    assert "--no-fail-on-problems" not in status_output
 
 
 def test_version() -> None:
