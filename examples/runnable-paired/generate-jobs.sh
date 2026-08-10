@@ -16,4 +16,4 @@ INPUT_MODE=paired-fixed \
 R1_NAME=R1.fastq \
 R2_NAME=R2.fastq \
 STEP_COMMAND="$EXAMPLE_DIR/process-pair.sh" \
-bash "$PROJECT_ROOT/examples/build-jobs-template.sh"
+bash "$PROJECT_ROOT/templates/generate-jobs-template.sh"

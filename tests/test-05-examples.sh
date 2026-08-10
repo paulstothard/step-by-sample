@@ -19,7 +19,9 @@ trap cleanup_test_dir EXIT
 DOC_ROOT="$TEST_DIR/repository with spaces"
 mkdir -p "$DOC_ROOT"
 cp -R "$PROJECT_ROOT/examples" "$DOC_ROOT/examples"
-cp -R "$PROJECT_ROOT/helpers" "$DOC_ROOT/helpers"
+cp -R "$PROJECT_ROOT/bin" "$DOC_ROOT/bin"
+cp -R "$PROJECT_ROOT/lib" "$DOC_ROOT/lib"
+cp -R "$PROJECT_ROOT/templates" "$DOC_ROOT/templates"
 
 #############################################################################
 start_test "Single-input example runs end to end"
@@ -27,9 +29,9 @@ start_test "Single-input example runs end to end"
 SINGLE="$DOC_ROOT/examples/runnable-single"
 (
   cd "$SINGLE"
-  ./build-jobs.sh >/dev/null
-  ../../helpers/run-list-local.sh work/run.txt 2 >/dev/null 2>&1
-  ../../helpers/summarize-status.sh work/output --input-dir input-samples >work/status.txt
+  ./generate-jobs.sh >/dev/null
+  ../../bin/run-jobs-local.sh work/run.txt 2 >/dev/null 2>&1
+  ../../bin/show-step-status.sh work/output --input-dir input-samples >work/status.txt
 )
 WORK="$SINGLE/work"
 
@@ -45,9 +47,9 @@ start_test "Paired-input example runs end to end"
 PAIRED="$DOC_ROOT/examples/runnable-paired"
 (
   cd "$PAIRED"
-  ./build-jobs.sh >/dev/null
-  ../../helpers/run-list-local.sh work/run.txt 2 >/dev/null 2>&1
-  ../../helpers/summarize-status.sh work/output --input-dir input-samples >work/status.txt
+  ./generate-jobs.sh >/dev/null
+  ../../bin/run-jobs-local.sh work/run.txt 2 >/dev/null 2>&1
+  ../../bin/show-step-status.sh work/output --input-dir input-samples >work/status.txt
 )
 WORK="$PAIRED/work"
 

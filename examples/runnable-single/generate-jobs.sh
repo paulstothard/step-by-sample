@@ -15,4 +15,4 @@ STRICT="${STRICT:-1}" \
 INPUT_MODE=single \
 INPUT_NAME=input.txt \
 STEP_COMMAND="$EXAMPLE_DIR/process-sample.sh" \
-bash "$PROJECT_ROOT/examples/build-jobs-template.sh"
+bash "$PROJECT_ROOT/templates/generate-jobs-template.sh"

@@ -6,9 +6,9 @@ software. `process-pair.sh` counts the reads in each mate file.
 From this directory:
 
 ```bash
-./build-jobs.sh
-../../helpers/run-list-local.sh work/run.txt 2
-../../helpers/summarize-status.sh work/output --input-dir input-samples
+./generate-jobs.sh
+../../bin/run-jobs-local.sh work/run.txt 2
+../../bin/show-step-status.sh work/output --input-dir input-samples
 ```
 
 Inspect `work/output/beta/pair-summary.txt`, which reports two R1 reads and two

@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  repair-failed.sh OUT_DIR [--clean-outputs]
+  reset-failed-samples.sh OUT_DIR [--clean-outputs]
 
 Description:
   Prepare failed samples for rerun by removing .failed markers.
@@ -20,9 +20,9 @@ Options:
   -h, --help        Show this help
 
 Examples:
-  repair-failed.sh my-step-output
-  repair-failed.sh my-step-output --clean-outputs
-  repair-failed.sh my-step-output --dry-run
+  reset-failed-samples.sh my-step-output
+  reset-failed-samples.sh my-step-output --clean-outputs
+  reset-failed-samples.sh my-step-output --dry-run
 
 Notes:
   - Only processes samples with .failed markers
@@ -151,11 +151,11 @@ else
   echo
   if [[ "$repaired_count" -gt 0 ]]; then
     echo "Next steps:"
-    echo "  1. Rebuild run list with MODE=\"unfinished\""
+    echo "  1. Regenerate the run list with MODE=\"unfinished\""
     echo "  2. Execute the new run list"
     echo
     echo "Example:"
-    echo "  # Edit your build script to set MODE=\"unfinished\""
+    echo "  # Edit your generation script to set MODE=\"unfinished\""
     echo "  # Then run it to regenerate job scripts"
   fi
 fi

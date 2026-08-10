@@ -9,7 +9,7 @@ fi
 usage() {
   cat <<'EOF'
 Usage:
-  run-list-slurm.sh RUN_LIST [options]
+  submit-jobs-slurm.sh RUN_LIST [options]
 
 Description:
   Submit a Slurm array job that runs one job script per array task.
@@ -31,9 +31,9 @@ Options:
   -h, --help           Show this help
 
 Examples:
-  run-list-slurm.sh run-my-step.txt --account myacct --partition cpu
-  run-list-slurm.sh run-my-step.txt --time 08:00:00 --mem 16G --cpus 8 --array-max 10
-  run-list-slurm.sh run-my-step.txt --setup-file /etc/profile.d/modules.sh --module my-tool/1.2.3
+  submit-jobs-slurm.sh run-my-step.txt --account myacct --partition cpu
+  submit-jobs-slurm.sh run-my-step.txt --time 08:00:00 --mem 16G --cpus 8 --array-max 10
+  submit-jobs-slurm.sh run-my-step.txt --setup-file /etc/profile.d/modules.sh --module my-tool/1.2.3
 EOF
 }
 
@@ -180,7 +180,7 @@ if [[ -n "$KEEP_SCRIPT" ]]; then
 else
   tmp_base="${TMPDIR:-/tmp}"
   tmp_base="${tmp_base%/}"
-  SBATCH_SCRIPT="$(mktemp "$tmp_base/run-list-slurm.XXXXXX")"
+  SBATCH_SCRIPT="$(mktemp "$tmp_base/submit-jobs-slurm.XXXXXX")"
 fi
 
 ACCOUNT_LINE=""

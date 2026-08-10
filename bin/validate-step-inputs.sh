@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  validate-step.sh IN_DIR
+  validate-step-inputs.sh IN_DIR
 
 Description:
   Validate input directory structure for step-by-sample workflows.
@@ -22,8 +22,8 @@ Checks:
   - Display sample count and directory structure
 
 Examples:
-  validate-step.sh shovill_output
-  validate-step.sh /path/to/fastq_input
+  validate-step-inputs.sh shovill_output
+  validate-step-inputs.sh /path/to/fastq_input
 EOF
 }
 

@@ -26,17 +26,18 @@ error when started with an older Bash.
 Copy and edit the template:
 
 ```bash
-cp examples/build-jobs-template.sh build-my-step.sh
+cp templates/generate-jobs-template.sh generate-my-step-jobs.sh
 ```
 
 Set `IN`, `OUT`, `JOB_DIR`, and `LIST`, configure the input layout, and set
 `STEP_COMMAND` to a tested executable for the step. Generate jobs:
 
 ```bash
-./build-my-step.sh
+./generate-my-step-jobs.sh
 ```
 
-Every build rewrites the run list from the current inputs and selection mode.
+Every generation run rewrites the run list from the current inputs and selection
+mode.
 Inspect it before execution:
 
 ```bash
@@ -47,13 +48,13 @@ ls jobs-my-step/
 Run up to four samples locally:
 
 ```bash
-helpers/run-list-local.sh run-my-step.txt 4
+bin/run-jobs-local.sh run-my-step.txt 4
 ```
 
 Or submit the same list to Slurm:
 
 ```bash
-helpers/run-list-slurm.sh run-my-step.txt \
+bin/submit-jobs-slurm.sh run-my-step.txt \
   --account my_account \
   --partition cpu \
   --time 08:00:00 \
@@ -65,7 +66,7 @@ helpers/run-list-slurm.sh run-my-step.txt \
 Compare outputs with the expected input samples:
 
 ```bash
-helpers/summarize-status.sh my-step-output --input-dir input-samples
+bin/show-step-status.sh my-step-output --input-dir input-samples
 ```
 
 ## Folder convention
@@ -94,7 +95,7 @@ from any working directory.
 ## Configuring the template
 
 The main template is
-[examples/build-jobs-template.sh](examples/build-jobs-template.sh). Its common
+[templates/generate-jobs-template.sh](templates/generate-jobs-template.sh). Its common
 settings are:
 
 ```bash
@@ -155,24 +156,24 @@ format is intentionally one path per line.
   paired FASTQ fixtures.
 
 Both examples run without third-party bioinformatics tools and are tested end
-to end. Each README shows the build, execution, status, and output inspection
+to end. Each README shows the generation, execution, status, and output inspection
 commands.
 
-## Execution helpers
+## Execution commands
 
 ### Local
 
 ```bash
-helpers/run-list-local.sh RUN_LIST [JOBS]
+bin/run-jobs-local.sh RUN_LIST [JOBS]
 ```
 
-Blank lines and lines beginning with `#` are ignored. The helper validates every
+Blank lines and lines beginning with `#` are ignored. The command validates every
 listed script before starting work and returns nonzero if any sample job fails.
 
 ### Slurm
 
 ```bash
-helpers/run-list-slurm.sh RUN_LIST [options]
+bin/submit-jobs-slurm.sh RUN_LIST [options]
 ```
 
 Useful options include `--account`, `--partition`, `--time`, `--mem`, `--cpus`,
@@ -180,7 +181,7 @@ Useful options include `--account`, `--partition`, `--time`, `--mem`, `--cpus`,
 every array task:
 
 ```bash
-helpers/run-list-slurm.sh run-my-step.txt \
+bin/submit-jobs-slurm.sh run-my-step.txt \
   --setup-file /etc/profile.d/modules.sh \
   --module my-tool/1.2.3 \
   --module python/3.11
@@ -193,14 +194,14 @@ helpers/run-list-slurm.sh run-my-step.txt \
 Summarize output directories alone:
 
 ```bash
-helpers/summarize-status.sh my-step-output
+bin/show-step-status.sh my-step-output
 ```
 
 Supplying the input directory also reveals samples that never produced an
 output directory and stale outputs with no corresponding input:
 
 ```bash
-helpers/summarize-status.sh my-step-output --input-dir input-samples
+bin/show-step-status.sh my-step-output --input-dir input-samples
 ```
 
 The summary reports done, failed, other, conflicting markers, and extra outputs.
@@ -208,28 +209,28 @@ The summary reports done, failed, other, conflicting markers, and extra outputs.
 Rerun samples that still have `.failed`:
 
 ```bash
-MODE=failed ./build-my-step.sh
-helpers/run-list-local.sh run-my-step.txt 4
+MODE=failed ./generate-my-step-jobs.sh
+bin/run-jobs-local.sh run-my-step.txt 4
 ```
 
 Optionally clean failed outputs first:
 
 ```bash
-helpers/repair-failed.sh my-step-output --clean-outputs
-MODE=unfinished ./build-my-step.sh
-helpers/run-list-local.sh run-my-step.txt 4
+bin/reset-failed-samples.sh my-step-output --clean-outputs
+MODE=unfinished ./generate-my-step-jobs.sh
+bin/run-jobs-local.sh run-my-step.txt 4
 ```
 
 Repair removes `.failed`, so repaired samples must be selected with
 `MODE=unfinished`, not `MODE=failed`. `run.log` is preserved during cleanup for
 inspection, though the next run replaces it.
 
-## Utility helpers
+## Utility commands
 
-- `validate-step.sh`: validate input-directory structure before generation.
-- `summarize-status.sh`: report status, missing outputs, and conflicts.
-- `repair-failed.sh`: clear failed markers and optionally partial outputs.
-- `common.sh`: shared functions for custom scripts.
+- `bin/validate-step-inputs.sh`: validate input-directory structure before generation.
+- `bin/show-step-status.sh`: report status, missing outputs, and conflicts.
+- `bin/reset-failed-samples.sh`: clear failed markers and optionally partial outputs.
+- `lib/common.sh`: internal functions sourced by templates and tests.
 
 ## Testing
 
@@ -247,7 +248,7 @@ tests/run-all-tests.sh --quick
 tests/run-all-tests.sh 'test-03*'
 ```
 
-The suite exercises the real template and helpers, including:
+The suite exercises the real template and commands, including:
 
 - local and mock-Slurm execution,
 - failed, unfinished, forced, repaired, and incremental reruns,
@@ -265,21 +266,23 @@ GitHub Actions runs the suite and ShellCheck on Linux and macOS. See
 ```text
 step-by-sample/
 ├── README.md
+├── templates/
+│   └── generate-jobs-template.sh
+├── bin/
+│   ├── reset-failed-samples.sh
+│   ├── run-jobs-local.sh
+│   ├── show-step-status.sh
+│   ├── submit-jobs-slurm.sh
+│   └── validate-step-inputs.sh
+├── lib/
+│   └── common.sh
 ├── examples/
-│   ├── build-jobs-template.sh
 │   ├── runnable-single/
 │   └── runnable-paired/
-├── helpers/
-│   ├── common.sh
-│   ├── repair-failed.sh
-│   ├── run-list-local.sh
-│   ├── run-list-slurm.sh
-│   ├── summarize-status.sh
-│   └── validate-step.sh
 └── tests/
     ├── run-all-tests.sh
     ├── test-01-workflow.sh
-    ├── test-02-helpers.sh
+    ├── test-02-commands.sh
     ├── test-03-edge-cases.sh
     ├── test-04-reruns.sh
     ├── test-05-examples.sh
@@ -290,9 +293,9 @@ step-by-sample/
 ## Operational notes
 
 - Missing inputs are counted during generation; use `STRICT=1` when they should
-  make the build fail.
+  make generation fail.
 - Generated jobs mark unexpected exits and handled signals as failed and remove
   their lock on exit. `SIGKILL` cannot be trapped and may leave `.running`; after
   confirming no process is active, remove that stale directory before rerunning.
-- Generated job directories and run lists are refreshed on every build; stale
-  jobs for samples skipped by the current mode are removed.
+- Generated job directories and run lists are refreshed on every generation
+  run; stale jobs for samples skipped by the current mode are removed.

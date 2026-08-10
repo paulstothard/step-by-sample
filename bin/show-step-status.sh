@@ -4,7 +4,7 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage:
-  summarize-status.sh OUT_DIR [--input-dir IN_DIR]
+  show-step-status.sh OUT_DIR [--input-dir IN_DIR]
 
 Description:
   Scan one output folder containing per-sample subfolders and summarize:
@@ -20,8 +20,8 @@ Options:
                        samples with no output directory are still reported.
 
 Examples:
-  summarize-status.sh my-step-output
-  summarize-status.sh my-step-output --input-dir input-samples
+  show-step-status.sh my-step-output
+  show-step-status.sh my-step-output --input-dir input-samples
 EOF
 }
 

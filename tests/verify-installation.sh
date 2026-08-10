@@ -13,7 +13,7 @@ echo
 tests=(
   "run-all-tests.sh"
   "test-01-workflow.sh"
-  "test-02-helpers.sh"
+  "test-02-commands.sh"
   "test-03-edge-cases.sh"
   "test-04-reruns.sh"
   "test-05-examples.sh"
@@ -74,22 +74,34 @@ if [[ $perms_ok -eq 1 ]]; then
   echo "  ✓ All test scripts are executable"
 fi
 
-# Check project files exist
+# Check project files exist and public entry points are executable
 echo
 echo "Checking project files..."
-if [[ -f "$PROJECT_ROOT/helpers/common.sh" ]]; then
-  echo "  ✓ helpers/common.sh"
-else
-  echo "  ✗ helpers/common.sh (missing)"
-  all_found=0
-fi
+project_files=(
+  "lib/common.sh"
+  "templates/generate-jobs-template.sh"
+  "bin/run-jobs-local.sh"
+  "bin/submit-jobs-slurm.sh"
+  "bin/show-step-status.sh"
+  "bin/reset-failed-samples.sh"
+  "bin/validate-step-inputs.sh"
+)
 
-if [[ -f "$PROJECT_ROOT/examples/build-jobs-template.sh" ]]; then
-  echo "  ✓ examples/build-jobs-template.sh"
-else
-  echo "  ✗ examples/build-jobs-template.sh (missing)"
-  all_found=0
-fi
+for project_file in "${project_files[@]}"; do
+  if [[ -f "$PROJECT_ROOT/$project_file" ]]; then
+    echo "  ✓ $project_file"
+  else
+    echo "  ✗ $project_file (missing)"
+    all_found=0
+  fi
+done
+
+for executable in "${project_files[@]:1}"; do
+  if [[ ! -x "$PROJECT_ROOT/$executable" ]]; then
+    echo "  ✗ $executable (not executable)"
+    perms_ok=0
+  fi
+done
 
 # Summary
 echo

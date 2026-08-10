@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Common functions for step-by-sample workflows
+# Internal functions for step-by-sample workflows
 # Source this file in your templates to use shared validation and utilities
 
 # Validate that a single input file exists

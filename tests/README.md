@@ -1,10 +1,10 @@
 # step-by-sample Testing Framework
 
-Comprehensive tests for the single step-by-sample workflow template and its helper scripts.
+Comprehensive tests for the single step-by-sample workflow template and its commands.
 
 ## Design Philosophy
 
-Tests exercise the real [examples/build-jobs-template.sh](../examples/build-jobs-template.sh) template and the real helper scripts. The goal is to validate the production workflow, not copies of it.
+Tests exercise the real [templates/generate-jobs-template.sh](../templates/generate-jobs-template.sh) template and the real commands. The goal is to validate the production workflow, not copies of it.
 
 ## Quick Start
 
@@ -48,8 +48,8 @@ tests/
 │   └── mock-commands.sh      # Mock tool commands for tests
 ├── mock-slurm/
 │   └── sbatch                # Mock Slurm for local testing
-├── test-01-workflow.sh       # Core workflow template + helper execution
-├── test-02-helpers.sh        # Helper utility tests
+├── test-01-workflow.sh       # Core workflow template + command execution
+├── test-02-commands.sh       # Public command and library tests
 ├── test-03-edge-cases.sh     # Edge cases and robustness
 ├── test-04-reruns.sh         # Rerun and recovery behavior
 ├── test-05-examples.sh       # Runnable examples
@@ -60,9 +60,9 @@ tests/
 
 ### test-01-workflow.sh
 
-Validates the primary workflow template and execution helpers:
+Validates the primary workflow template and execution commands:
 
-- builds per-sample jobs,
+- generates per-sample jobs,
 - emits portable absolute run-list paths,
 - executes generated jobs locally,
 - rebuilds correctly with `MODE=unfinished` and `MODE=failed`,
@@ -71,14 +71,14 @@ Validates the primary workflow template and execution helpers:
 - submits to mock Slurm,
 - applies Slurm setup files and module loads.
 
-### test-02-helpers.sh
+### test-02-commands.sh
 
-Validates helper utilities:
+Validates public commands and the internal library:
 
-- `validate-step.sh`,
-- `summarize-status.sh`,
-- `repair-failed.sh`,
-- `common.sh` helper functions.
+- `bin/validate-step-inputs.sh`,
+- `bin/show-step-status.sh`,
+- `bin/reset-failed-samples.sh`,
+- `lib/common.sh` functions.
 
 ### test-03-edge-cases.sh
 
@@ -102,7 +102,7 @@ Covers recovery behavior:
 - `MODE=failed`,
 - `MODE=unfinished`,
 - `FORCE=1`,
-- `repair-failed.sh`,
+- `reset-failed-samples.sh`,
 - incremental rebuilds,
 - repeated rerun cycles.
 
@@ -191,7 +191,7 @@ source "$SCRIPT_DIR/lib/test-helpers.sh"
 source "$SCRIPT_DIR/lib/mock-commands.sh"
 
 PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
-TEMPLATE="$PROJECT_ROOT/examples/build-jobs-template.sh"
+TEMPLATE="$PROJECT_ROOT/templates/generate-jobs-template.sh"
 
 setup_test_dir "my-feature"
 trap cleanup_test_dir EXIT
@@ -211,7 +211,7 @@ TEST_COMMAND="mock_success" \
   MODE="all" \
   bash "$TEMPLATE" >/dev/null 2>&1
 
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 2 >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 2 >/dev/null 2>&1
 
 assert_count_equals "$(count_done "$OUT")" 3 "All samples should complete" && \
 assert_file_exists "$OUT/sample_01/.done" && \

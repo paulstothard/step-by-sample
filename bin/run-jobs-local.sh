@@ -9,7 +9,7 @@ fi
 usage() {
   cat <<'EOF'
 Usage:
-  run-list-local.sh RUN_LIST [JOBS]
+  run-jobs-local.sh RUN_LIST [JOBS]
 
 Description:
   Run a list of per-sample job scripts locally using xargs.
@@ -24,8 +24,8 @@ Notes:
   - Each script path is executed with: bash "$script"
 
 Examples:
-  run-list-local.sh run-my-step.txt
-  run-list-local.sh run-my-step.txt 4
+  run-jobs-local.sh run-my-step.txt
+  run-jobs-local.sh run-my-step.txt 4
 EOF
 }
 

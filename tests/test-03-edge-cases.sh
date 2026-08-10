@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Exercise edge cases against the real workflow template and helper scripts.
+# Exercise edge cases against the real workflow template and public commands.
 
 set -euo pipefail
 
@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/lib/test-helpers.sh"
 source "$SCRIPT_DIR/lib/mock-commands.sh"
 
 PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
-TEMPLATE="$PROJECT_ROOT/examples/build-jobs-template.sh"
+TEMPLATE="$PROJECT_ROOT/templates/generate-jobs-template.sh"
 
 print_header "Testing Edge Cases and Robustness"
 
@@ -89,7 +89,7 @@ while IFS= read -r job; do
 done <"$LIST"
 
 if [[ "$syntax_ok" -eq 1 ]] \
-  && bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 2 >/dev/null 2>&1; then
+  && bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 2 >/dev/null 2>&1; then
   checks_ok=1
   for sample in "${special_names[@]}"; do
     [[ -f "$OUT/$sample/.done" ]] || checks_ok=0
@@ -110,7 +110,7 @@ LIST="$TEST_DIR/test3_list.txt"
 create_mock_samples "$IN" 50 single
 
 run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 8 >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 8 >/dev/null 2>&1
 
 assert_count_equals "$(count_done "$OUT")" 50 "All fifty samples should complete" \
   && pass_test
@@ -150,7 +150,7 @@ echo "data" >"$REAL/data.txt"
 ln -s "$REAL" "$IN/sample-link"
 
 run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 1 >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 1 >/dev/null 2>&1
 
 assert_file_exists "$OUT/sample-link/.done" \
   && pass_test
@@ -173,7 +173,7 @@ run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
 # second job follows' "$LIST"
 } >"$DECORATED_LIST"
 
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$DECORATED_LIST" 2 >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$DECORATED_LIST" 2 >/dev/null 2>&1
 assert_count_equals "$(count_done "$OUT")" 2 "Only runnable entries should execute" \
   && pass_test
 
@@ -220,7 +220,7 @@ JOB_DIR="$TEST_DIR/test8_jobs"
 LIST="$TEST_DIR/test8_list.txt"
 create_mock_samples "$IN" single sample1
 run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 1 >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 1 >/dev/null 2>&1
 run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" unfinished >/dev/null
 
 assert_count_equals "$(wc -l <"$LIST" | tr -d ' ')" 0 "No completed sample should be listed" \
@@ -249,7 +249,7 @@ OUT="$TEST_DIR/test10_out"
 mkdir -p "$IN/done" "$IN/pending" "$OUT/done"
 touch "$OUT/done/.done"
 
-output=$(bash "$PROJECT_ROOT/helpers/summarize-status.sh" "$OUT" --input-dir "$IN")
+output=$(bash "$PROJECT_ROOT/bin/show-step-status.sh" "$OUT" --input-dir "$IN")
 if grep -q "PENDING pending" <<<"$output" \
   && grep -q "Done:    1" <<<"$output" \
   && grep -q "Other:   1" <<<"$output"; then

@@ -8,7 +8,7 @@ source "$SCRIPT_DIR/lib/test-helpers.sh"
 source "$SCRIPT_DIR/lib/mock-commands.sh"
 
 PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
-TEMPLATE="$PROJECT_ROOT/examples/build-jobs-template.sh"
+TEMPLATE="$PROJECT_ROOT/templates/generate-jobs-template.sh"
 
 print_header "Testing Rerun Scenarios and Recovery"
 
@@ -57,7 +57,7 @@ LIST="$TEST_DIR/test1_list.txt"
 create_mock_samples "$IN" single ok1 fail1 ok2 fail2 ok3
 
 run_template mock_conditional_fail "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 3 >/dev/null 2>&1 || true
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 3 >/dev/null 2>&1 || true
 
 assert_count_equals "$(count_done "$OUT")" 3 "Three samples should succeed" \
   && assert_count_equals "$(count_failed "$OUT")" 2 "Two samples should fail" \
@@ -77,14 +77,14 @@ assert_count_equals "$(wc -l <"$LIST" | tr -d ' ')" 2 "Only failed jobs should b
 #############################################################################
 start_test "Failed jobs recover without repairing markers first"
 
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 2 >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 2 >/dev/null 2>&1
 
 assert_count_equals "$(count_done "$OUT")" 5 "All samples should now be done" \
   && assert_count_equals "$(count_failed "$OUT")" 0 "Failure markers should be cleared" \
   && pass_test
 
 #############################################################################
-start_test "repair-failed requires MODE=unfinished afterward"
+start_test "reset-failed-samples requires MODE=unfinished afterward"
 
 IN="$TEST_DIR/test4_in"
 OUT="$TEST_DIR/test4_out"
@@ -94,7 +94,7 @@ create_mock_samples "$IN" single sample1 sample2
 mkdir -p "$OUT/sample1" "$OUT/sample2"
 touch "$OUT/sample1/.failed" "$OUT/sample2/.failed"
 
-bash "$PROJECT_ROOT/helpers/repair-failed.sh" "$OUT" >/dev/null
+bash "$PROJECT_ROOT/bin/reset-failed-samples.sh" "$OUT" >/dev/null
 run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" failed >/dev/null
 failed_mode_count=$(wc -l <"$LIST" | tr -d ' ')
 run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" unfinished >/dev/null
@@ -107,7 +107,7 @@ assert_count_equals "$failed_mode_count" 0 "Repaired samples no longer match MOD
 #############################################################################
 start_test "Complete repair and rerun workflow converges"
 
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 2 >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 2 >/dev/null 2>&1
 
 assert_count_equals "$(count_done "$OUT")" 2 "Both repaired samples should complete" \
   && pass_test
@@ -123,7 +123,7 @@ assert_count_equals "$(wc -l <"$LIST" | tr -d ' ')" 2 "FORCE should list all sam
 #############################################################################
 start_test "New samples are selected by MODE=unfinished"
 
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 2 >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 2 >/dev/null 2>&1
 create_mock_samples "$IN" single sample3 sample4
 run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" unfinished >/dev/null
 
@@ -143,7 +143,7 @@ echo "log" >"$OUT/failed/run.log"
 echo "partial" >"$OUT/failed/partial.txt"
 echo "nested" >"$OUT/failed/subdir/nested.txt"
 
-bash "$PROJECT_ROOT/helpers/repair-failed.sh" "$OUT" --clean-outputs >/dev/null
+bash "$PROJECT_ROOT/bin/reset-failed-samples.sh" "$OUT" --clean-outputs >/dev/null
 
 assert_file_not_exists "$OUT/failed/.failed" \
   && assert_file_not_exists "$OUT/failed/partial.txt" \
@@ -160,9 +160,9 @@ LIST="$TEST_DIR/test9_list.txt"
 create_mock_samples "$IN" single ok fail-once
 
 run_template mock_conditional_fail "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 2 >/dev/null 2>&1 || true
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 2 >/dev/null 2>&1 || true
 run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" failed >/dev/null
-bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 1 >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$LIST" 1 >/dev/null 2>&1
 run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" unfinished >/dev/null
 
 assert_count_equals "$(count_done "$OUT")" 2 "Both samples should eventually complete" \

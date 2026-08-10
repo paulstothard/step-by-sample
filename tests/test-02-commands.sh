@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Test helper utility scripts
-# Tests validate-step.sh, summarize-status.sh, repair-failed.sh, common.sh
+# Test public commands and the internal shared library
+# Tests validate-step-inputs.sh, show-step-status.sh, reset-failed-samples.sh, and common.sh
 
 set -euo pipefail
 
@@ -8,34 +8,34 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/lib/test-helpers.sh"
 
 PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
-source "$PROJECT_ROOT/helpers/common.sh"
+source "$PROJECT_ROOT/lib/common.sh"
 
-print_header "Testing Helper Utilities"
+print_header "Testing Commands"
 
 # Setup
-setup_test_dir "helpers"
+setup_test_dir "commands"
 trap cleanup_test_dir EXIT
 
 #############################################################################
-# Test 1: validate-step.sh with valid input
+# Test 1: validate-step-inputs.sh with valid input
 #############################################################################
-start_test "validate-step.sh succeeds with valid input"
+start_test "validate-step-inputs.sh succeeds with valid input"
 
 IN="$TEST_DIR/test1_in"
 create_mock_samples "$IN" "single" "s1" "s2" "s3"
 
-if bash "$PROJECT_ROOT/helpers/validate-step.sh" "$IN" >/dev/null 2>&1; then
+if bash "$PROJECT_ROOT/bin/validate-step-inputs.sh" "$IN" >/dev/null 2>&1; then
   pass_test
 else
   fail_test "Validation failed on valid input"
 fi
 
 #############################################################################
-# Test 2: validate-step.sh catches missing directory
+# Test 2: validate-step-inputs.sh catches missing directory
 #############################################################################
-start_test "validate-step.sh catches missing directory"
+start_test "validate-step-inputs.sh catches missing directory"
 
-if bash "$PROJECT_ROOT/helpers/validate-step.sh" "$TEST_DIR/nonexistent" >/dev/null 2>&1; then
+if bash "$PROJECT_ROOT/bin/validate-step-inputs.sh" "$TEST_DIR/nonexistent" >/dev/null 2>&1; then
   fail_test "Should have failed on missing directory"
 else
   print_info "✓ Correctly rejected missing directory"
@@ -43,13 +43,13 @@ else
 fi
 
 #############################################################################
-# Test 3: validate-step.sh catches empty directory
+# Test 3: validate-step-inputs.sh catches empty directory
 #############################################################################
-start_test "validate-step.sh catches empty directory"
+start_test "validate-step-inputs.sh catches empty directory"
 
 mkdir -p "$TEST_DIR/test3_empty"
 
-if bash "$PROJECT_ROOT/helpers/validate-step.sh" "$TEST_DIR/test3_empty" >/dev/null 2>&1; then
+if bash "$PROJECT_ROOT/bin/validate-step-inputs.sh" "$TEST_DIR/test3_empty" >/dev/null 2>&1; then
   fail_test "Should have failed on empty directory"
 else
   print_info "✓ Correctly rejected empty directory"
@@ -57,9 +57,9 @@ else
 fi
 
 #############################################################################
-# Test 4: summarize-status.sh reports counts correctly
+# Test 4: show-step-status.sh reports counts correctly
 #############################################################################
-start_test "summarize-status.sh reports correct counts"
+start_test "show-step-status.sh reports correct counts"
 
 OUT="$TEST_DIR/test4_out"
 mkdir -p "$OUT/s1" "$OUT/s2" "$OUT/s3" "$OUT/s4"
@@ -68,7 +68,7 @@ touch "$OUT/s2/.done"
 touch "$OUT/s3/.failed"
 # s4 has neither (other)
 
-output=$(bash "$PROJECT_ROOT/helpers/summarize-status.sh" "$OUT" 2>&1)
+output=$(bash "$PROJECT_ROOT/bin/show-step-status.sh" "$OUT" 2>&1)
 
 if echo "$output" | grep -q "Done:    2" \
   && echo "$output" | grep -q "Failed:  1" \
@@ -80,9 +80,9 @@ else
 fi
 
 #############################################################################
-# Test 5: repair-failed.sh removes failure markers
+# Test 5: reset-failed-samples.sh removes failure markers
 #############################################################################
-start_test "repair-failed.sh removes .failed markers"
+start_test "reset-failed-samples.sh removes .failed markers"
 
 OUT="$TEST_DIR/test5_out"
 mkdir -p "$OUT/ok" "$OUT/failed1" "$OUT/failed2"
@@ -91,20 +91,20 @@ touch "$OUT/failed1/.failed"
 touch "$OUT/failed2/.failed"
 echo "test log" >"$OUT/failed1/run.log"
 
-if bash "$PROJECT_ROOT/helpers/repair-failed.sh" "$OUT" >/dev/null 2>&1; then
+if bash "$PROJECT_ROOT/bin/reset-failed-samples.sh" "$OUT" >/dev/null 2>&1; then
   assert_file_exists "$OUT/ok/.done" "Done marker should remain" \
     && assert_file_not_exists "$OUT/failed1/.failed" "Failed marker should be removed" \
     && assert_file_not_exists "$OUT/failed2/.failed" "Failed marker should be removed" \
     && assert_file_exists "$OUT/failed1/run.log" "Log should be preserved" \
     && pass_test
 else
-  fail_test "repair-failed.sh execution failed"
+  fail_test "reset-failed-samples.sh execution failed"
 fi
 
 #############################################################################
-# Test 6: repair-failed.sh --clean-outputs removes files
+# Test 6: reset-failed-samples.sh --clean-outputs removes files
 #############################################################################
-start_test "repair-failed.sh --clean-outputs removes output files"
+start_test "reset-failed-samples.sh --clean-outputs removes output files"
 
 OUT="$TEST_DIR/test6_out"
 mkdir -p "$OUT/failed"
@@ -113,26 +113,26 @@ touch "$OUT/failed/output1.txt"
 touch "$OUT/failed/output2.txt"
 echo "test log" >"$OUT/failed/run.log"
 
-if bash "$PROJECT_ROOT/helpers/repair-failed.sh" "$OUT" --clean-outputs >/dev/null 2>&1; then
+if bash "$PROJECT_ROOT/bin/reset-failed-samples.sh" "$OUT" --clean-outputs >/dev/null 2>&1; then
   assert_file_not_exists "$OUT/failed/.failed" "Failed marker should be removed" \
     && assert_file_not_exists "$OUT/failed/output1.txt" "Output files should be removed" \
     && assert_file_not_exists "$OUT/failed/output2.txt" "Output files should be removed" \
     && assert_file_exists "$OUT/failed/run.log" "Log should be preserved" \
     && pass_test
 else
-  fail_test "repair-failed.sh --clean-outputs failed"
+  fail_test "reset-failed-samples.sh --clean-outputs failed"
 fi
 
 #############################################################################
-# Test 7: repair-failed.sh --dry-run doesn't modify files
+# Test 7: reset-failed-samples.sh --dry-run doesn't modify files
 #############################################################################
-start_test "repair-failed.sh --dry-run doesn't modify files"
+start_test "reset-failed-samples.sh --dry-run doesn't modify files"
 
 OUT="$TEST_DIR/test7_out"
 mkdir -p "$OUT/failed"
 touch "$OUT/failed/.failed"
 
-bash "$PROJECT_ROOT/helpers/repair-failed.sh" "$OUT" --dry-run >/dev/null 2>&1
+bash "$PROJECT_ROOT/bin/reset-failed-samples.sh" "$OUT" --dry-run >/dev/null 2>&1
 
 assert_file_exists "$OUT/failed/.failed" "Failed marker should still exist after dry run" \
   && pass_test

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Test the primary step-by-sample workflow
-# Tests the ACTUAL build-jobs-template.sh, not a copy
+# Tests the actual generate-jobs-template.sh, not a copy
 
 set -euo pipefail
 
@@ -9,9 +9,9 @@ source "$SCRIPT_DIR/lib/test-helpers.sh"
 source "$SCRIPT_DIR/lib/mock-commands.sh"
 
 PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
-TEMPLATE="$PROJECT_ROOT/examples/build-jobs-template.sh"
+TEMPLATE="$PROJECT_ROOT/templates/generate-jobs-template.sh"
 
-print_header "Testing Workflow Template + Execution Helpers"
+print_header "Testing Workflow Template + Execution Commands"
 
 # Setup
 setup_test_dir "workflow"
@@ -30,8 +30,8 @@ MOCK_EOF
   chmod +x "$MOCK_BIN/$mock_func"
 done
 
-# Helper to run the actual template with test parameters
-run_build_template() {
+# Test utility to run the actual template with test parameters
+run_generation_template() {
   local test_command="$1"
   local in_dir="$2"
   local out_dir="$3"
@@ -40,7 +40,7 @@ run_build_template() {
   local mode="${6:-unfinished}"
   local force="${7:-0}"
 
-  # Add mock commands to PATH and run the ACTUAL build template
+  # Add mock commands to PATH and run the actual generation template
   PATH="$MOCK_BIN:$PATH" \
     TEST_COMMAND="$test_command" \
     IN="$in_dir" \
@@ -53,9 +53,9 @@ run_build_template() {
 }
 
 #############################################################################
-# Test 1: Build jobs with MODE=all
+# Test 1: Generate jobs with MODE=all
 #############################################################################
-start_test "Build jobs for all samples"
+start_test "Generate jobs for all samples"
 
 IN="$TEST_DIR/test1_in"
 OUT="$TEST_DIR/test1_out"
@@ -64,7 +64,7 @@ LIST="$TEST_DIR/test1_list.txt"
 
 create_mock_samples "$IN" 3 single
 
-run_build_template "mock_success" "$IN" "$OUT" "$JOB_DIR" "$LIST" "all" 0 >/dev/null 2>&1
+run_generation_template "mock_success" "$IN" "$OUT" "$JOB_DIR" "$LIST" "all" 0 >/dev/null 2>&1
 
 TEST1_OUT="$OUT"
 TEST1_JOB_DIR="$JOB_DIR"
@@ -80,23 +80,23 @@ assert_file_exists "$LIST" \
   && pass_test
 
 #############################################################################
-# Test 2: Execute jobs with run-list-local.sh
+# Test 2: Execute jobs with run-jobs-local.sh
 #############################################################################
-start_test "Execute jobs locally with run-list-local.sh"
+start_test "Execute jobs locally with run-jobs-local.sh"
 
 # Use jobs from previous test
-if (cd /tmp && bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$TEST1_LIST" 2 >/dev/null 2>&1); then
+if (cd /tmp && bash "$PROJECT_ROOT/bin/run-jobs-local.sh" "$TEST1_LIST" 2 >/dev/null 2>&1); then
   assert_count_equals "$(count_done "$TEST1_OUT")" 3 "All 3 samples should complete" \
     && assert_count_equals "$(count_failed "$TEST1_OUT")" 0 "No failures expected" \
     && assert_file_exists "$TEST1_OUT/sample_01/.done" \
     && assert_file_exists "$TEST1_OUT/sample_02/run.log" \
     && pass_test
 else
-  fail_test "run-list-local.sh execution failed"
+  fail_test "run-jobs-local.sh execution failed"
 fi
 
 #############################################################################
-# Test 3: MODE=unfinished only builds incomplete jobs
+# Test 3: MODE=unfinished only generates incomplete jobs
 #############################################################################
 start_test "MODE=unfinished skips completed samples"
 
@@ -112,7 +112,7 @@ mkdir -p "$OUT/sample_01" "$OUT/sample_03"
 touch "$OUT/sample_01/.done"
 touch "$OUT/sample_03/.done"
 
-run_build_template "mock_success" "$IN" "$OUT" "$JOB_DIR" "$LIST" "unfinished" 0 >/dev/null 2>&1
+run_generation_template "mock_success" "$IN" "$OUT" "$JOB_DIR" "$LIST" "unfinished" 0 >/dev/null 2>&1
 
 n_jobs=$(wc -l <"$LIST" | tr -d ' ')
 assert_count_equals "$n_jobs" 1 "Only 1 unfinished sample should get a job" \
@@ -121,9 +121,9 @@ assert_count_equals "$n_jobs" 1 "Only 1 unfinished sample should get a job" \
   && pass_test
 
 #############################################################################
-# Test 4: MODE=failed only builds failed jobs
+# Test 4: MODE=failed only generates failed jobs
 #############################################################################
-start_test "MODE=failed only builds jobs for failed samples"
+start_test "MODE=failed only generates jobs for failed samples"
 
 IN="$TEST_DIR/test4_in"
 OUT="$TEST_DIR/test4_out"
@@ -139,7 +139,7 @@ touch "$OUT/sample_02/.failed"
 touch "$OUT/sample_03/.done"
 touch "$OUT/sample_04/.failed"
 
-run_build_template "mock_success" "$IN" "$OUT" "$JOB_DIR" "$LIST" "failed" 0 >/dev/null 2>&1
+run_generation_template "mock_success" "$IN" "$OUT" "$JOB_DIR" "$LIST" "failed" 0 >/dev/null 2>&1
 
 n_jobs=$(wc -l <"$LIST" | tr -d ' ')
 assert_count_equals "$n_jobs" 2 "Only 2 failed samples should get jobs" \
@@ -175,7 +175,7 @@ LIST="$TEST_DIR/test6_list.txt"
 
 create_mock_samples "$IN" 1 single
 
-run_build_template "mock_fail" "$IN" "$OUT" "$JOB_DIR" "$LIST" "all" 0 >/dev/null 2>&1
+run_generation_template "mock_fail" "$IN" "$OUT" "$JOB_DIR" "$LIST" "all" 0 >/dev/null 2>&1
 
 if bash "$JOB_DIR/sample_01.sh" >/dev/null 2>&1; then
   fail_test "Generated job should fail when the command fails"
@@ -197,13 +197,13 @@ LIST="$TEST_DIR/test7_list.txt"
 
 create_mock_samples "$IN" 2 single
 
-run_build_template "mock_success" "$IN" "$OUT" "$JOB_DIR" "$LIST" "all" 0 >/dev/null 2>&1
+run_generation_template "mock_success" "$IN" "$OUT" "$JOB_DIR" "$LIST" "all" 0 >/dev/null 2>&1
 
 # Add mock sbatch to PATH temporarily
 export PATH="$SCRIPT_DIR/mock-slurm:$PATH"
 
-# Submit via run-list-slurm.sh
-output=$(bash "$PROJECT_ROOT/helpers/run-list-slurm.sh" "$LIST" \
+# Submit via submit-jobs-slurm.sh
+output=$(bash "$PROJECT_ROOT/bin/submit-jobs-slurm.sh" "$LIST" \
   --account test \
   --partition cpu \
   --log-dir "$TEST_DIR/slurm-logs" 2>&1)
@@ -263,7 +263,7 @@ chmod +x "$JOB_DIR/check-env.sh"
 
 printf '%s\n' "$JOB_DIR/check-env.sh" >"$LIST"
 
-output=$(bash "$PROJECT_ROOT/helpers/run-list-slurm.sh" "$LIST" \
+output=$(bash "$PROJECT_ROOT/bin/submit-jobs-slurm.sh" "$LIST" \
   --log-dir "$LOG_DIR" \
   --setup-file "$SETUP_FILE" \
   --module "tool/1.0" 2>&1)

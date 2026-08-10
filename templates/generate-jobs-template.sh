@@ -10,7 +10,7 @@ usage() {
   cat <<'EOF'
 Usage:
   Customize the parameters at the top of this script, then run:
-    ./build-jobs-template.sh
+    ./generate-jobs-template.sh
 
 Parameters (edit in script):
   IN       Input directory with sample subdirectories
@@ -33,11 +33,11 @@ Description:
   The run list can be executed locally or on Slurm.
 
 Examples:
-  # Build jobs for unfinished samples
-  ./build-jobs-template.sh
+  # Generate jobs for unfinished samples
+  ./generate-jobs-template.sh
 
-  # Build jobs for failed samples only
-  MODE="failed" ./build-jobs-template.sh
+  # Generate jobs for failed samples only
+  MODE="failed" ./generate-jobs-template.sh
 EOF
 }
 
@@ -48,12 +48,12 @@ fi
 
 # Resolve paths without allowing a user's CDPATH setting to add output.
 SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-if [[ -f "$SCRIPT_DIR/../helpers/common.sh" ]]; then
-  source "$SCRIPT_DIR/../helpers/common.sh"
-elif [[ -f "$SCRIPT_DIR/helpers/common.sh" ]]; then
+if [[ -f "$SCRIPT_DIR/../lib/common.sh" ]]; then
+  source "$SCRIPT_DIR/../lib/common.sh"
+elif [[ -f "$SCRIPT_DIR/lib/common.sh" ]]; then
   # This is the expected location after following the README and copying the
-  # template from examples/ into the repository root.
-  source "$SCRIPT_DIR/helpers/common.sh"
+  # template from templates/ into the repository root.
+  source "$SCRIPT_DIR/lib/common.sh"
 fi
 
 # Default parameters (override via environment variables for testing)
@@ -133,7 +133,7 @@ LIST="$(CDPATH='' cd -- "$(dirname -- "$LIST")" && pwd -P)/$(basename -- "$LIST"
 # Count and display samples
 n_total=$(find -L "$IN" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
 echo "Found $n_total samples in $IN"
-echo "Building jobs for MODE=$MODE"
+echo "Generating jobs for MODE=$MODE"
 echo
 
 : >"$LIST"

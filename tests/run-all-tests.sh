@@ -34,7 +34,7 @@ Examples:
   run-all-tests.sh --verbose          # Run with verbose output
   run-all-tests.sh --quick            # Run quick subset
   run-all-tests.sh "test-01*"         # Run only test-01 files
-  run-all-tests.sh "test-02*"         # Run only helper tests
+  run-all-tests.sh "test-02*"         # Run only command/library tests
 
 Exit Code:
   0   All tests passed
