@@ -3,8 +3,8 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
 
 echo "Verifying test installation..."
 echo
@@ -16,6 +16,7 @@ tests=(
   "test-02-helpers.sh"
   "test-03-edge-cases.sh"
   "test-04-reruns.sh"
+  "test-05-examples.sh"
 )
 
 echo "Checking test scripts..."

@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ((BASH_VERSINFO[0] < 4)); then
+  echo "Error: step-by-sample requires Bash 4 or newer (found $BASH_VERSION)" >&2
+  exit 2
+fi
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -14,6 +19,14 @@ Parameters (edit in script):
   LIST     Path to generated run list file
   MODE     Which samples to include: unfinished, failed, all
   FORCE    1 to include all regardless of status, 0 to respect MODE
+  STRICT   1 to fail generation when any sample is missing its input
+  INPUT_MODE    single or paired-fixed
+  INPUT_NAME    File name for single mode. Default: input.dat
+  R1_NAME       Forward-read file name. Default: R1.fastq.gz
+  R2_NAME       Reverse-read file name. Default: R2.fastq.gz
+  STEP_COMMAND  Optional executable called for each sample. Its arguments are:
+                  single:       OUT_DIR INPUT_FILE SAMPLE_NAME
+                  paired-fixed: OUT_DIR R1_FILE R2_FILE SAMPLE_NAME
 
 Description:
   Generate per-sample job scripts and a run list for a workflow step.
@@ -33,10 +46,14 @@ if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
   exit 0
 fi
 
-# Source common functions
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Resolve paths without allowing a user's CDPATH setting to add output.
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 if [[ -f "$SCRIPT_DIR/../helpers/common.sh" ]]; then
   source "$SCRIPT_DIR/../helpers/common.sh"
+elif [[ -f "$SCRIPT_DIR/helpers/common.sh" ]]; then
+  # This is the expected location after following the README and copying the
+  # template from examples/ into the repository root.
+  source "$SCRIPT_DIR/helpers/common.sh"
 fi
 
 # Default parameters (override via environment variables for testing)
@@ -46,6 +63,29 @@ JOB_DIR="${JOB_DIR:-jobs-my-step}"
 LIST="${LIST:-run-my-step.txt}"
 MODE="${MODE:-unfinished}" # unfinished, failed, all
 FORCE="${FORCE:-0}"
+STRICT="${STRICT:-0}"
+INPUT_MODE="${INPUT_MODE:-single}"
+INPUT_NAME="${INPUT_NAME:-}"
+R1_NAME="${R1_NAME:-R1.fastq.gz}"
+R2_NAME="${R2_NAME:-R2.fastq.gz}"
+# TEST_COMMAND is retained as a backwards-compatible test hook.
+STEP_COMMAND="${STEP_COMMAND:-${TEST_COMMAND:-}}"
+
+if [[ -z "$INPUT_NAME" ]]; then
+  if [[ -n "${TEST_COMMAND:-}" ]]; then
+    INPUT_NAME="data.txt"
+  else
+    INPUT_NAME="input.dat"
+  fi
+fi
+
+if [[ -n "$STEP_COMMAND" ]] && [[ "$STEP_COMMAND" == */* ]]; then
+  if [[ ! -x "$STEP_COMMAND" ]]; then
+    echo "Error: STEP_COMMAND is not executable: $STEP_COMMAND" >&2
+    exit 1
+  fi
+  STEP_COMMAND="$(CDPATH='' cd -- "$(dirname -- "$STEP_COMMAND")" && pwd -P)/$(basename -- "$STEP_COMMAND")"
+fi
 
 # Validate inputs
 if [[ ! -d "$IN" ]]; then
@@ -58,23 +98,49 @@ if [[ "$MODE" != "unfinished" ]] && [[ "$MODE" != "failed" ]] && [[ "$MODE" != "
   exit 1
 fi
 
+if [[ "$FORCE" != "0" ]] && [[ "$FORCE" != "1" ]]; then
+  echo "Error: FORCE must be 0 or 1" >&2
+  exit 1
+fi
+
+if [[ "$STRICT" != "0" ]] && [[ "$STRICT" != "1" ]]; then
+  echo "Error: STRICT must be 0 or 1" >&2
+  exit 1
+fi
+
+if [[ "$INPUT_MODE" != "single" ]] && [[ "$INPUT_MODE" != "paired-fixed" ]]; then
+  echo "Error: INPUT_MODE must be one of: single, paired-fixed" >&2
+  exit 1
+fi
+
+for input_name in "$INPUT_NAME" "$R1_NAME" "$R2_NAME"; do
+  if [[ "$input_name" == */* ]] || [[ "$input_name" == *$'\n'* ]] || [[ "$input_name" == *$'\r'* ]]; then
+    echo "Error: input file names must be plain file names without slashes or newlines: $input_name" >&2
+    exit 1
+  fi
+done
+
 # Convert to absolute paths for safety
-IN="$(cd "$IN" && pwd)"
+IN="$(CDPATH='' cd -- "$IN" && pwd -P)"
 mkdir -p "$OUT"
-OUT="$(cd "$OUT" && pwd)"
+OUT="$(CDPATH='' cd -- "$OUT" && pwd -P)"
 mkdir -p "$(dirname "$JOB_DIR")"
-JOB_DIR="$(cd "$(dirname "$JOB_DIR")" && pwd)/$(basename "$JOB_DIR")"
+JOB_DIR="$(CDPATH='' cd -- "$(dirname -- "$JOB_DIR")" && pwd -P)/$(basename -- "$JOB_DIR")"
 mkdir -p "$JOB_DIR"
 mkdir -p "$(dirname "$LIST")"
-LIST="$(cd "$(dirname "$LIST")" && pwd)/$(basename "$LIST")"
+LIST="$(CDPATH='' cd -- "$(dirname -- "$LIST")" && pwd -P)/$(basename -- "$LIST")"
 
 # Count and display samples
-n_total=$(find "$IN" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+n_total=$(find -L "$IN" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
 echo "Found $n_total samples in $IN"
 echo "Building jobs for MODE=$MODE"
 echo
 
 : >"$LIST"
+
+n_jobs=0
+n_missing=0
+n_status_skipped=0
 
 while IFS= read -r -d '' sample_dir; do
   sample="$(basename "$sample_dir")"
@@ -84,52 +150,48 @@ while IFS= read -r -d '' sample_dir; do
   fail="$out_dir/.failed"
   job="$JOB_DIR/$sample.sh"
 
+  if [[ "$sample" == *$'\n'* ]] || [[ "$sample" == *$'\r'* ]]; then
+    echo "Error: sample names cannot contain newlines: $sample" >&2
+    exit 1
+  fi
+
   ######################################################################
   # EDIT THIS SECTION: define the input file(s) for one sample
   ######################################################################
 
-  # For testing: use generic data.txt if TEST_COMMAND is set
-  if [[ -n "${TEST_COMMAND:-}" ]]; then
-    f="$sample_dir/data.txt"
-  else
-    # Placeholder example: one file with a fixed name in each sample folder
-    f="$sample_dir/input.dat"
+  f=""
+  r1=""
+  r2=""
 
-    # Example: assembly output from a previous step
-    # f="$sample_dir/contigs.fasta"
+  if [[ "$INPUT_MODE" == "single" ]]; then
+    f="$sample_dir/$INPUT_NAME"
+  else
+    r1="$sample_dir/$R1_NAME"
+    r2="$sample_dir/$R2_NAME"
   fi
 
-  # Example 2: paired files with fixed names
-  # r1="$sample_dir/R1.fastq.gz"
-  # r2="$sample_dir/R2.fastq.gz"
-
-  # Example 3: paired files with variable names such as sample_R1.fastq.gz
-  # mapfile -t reads < <(find "$sample_dir" -maxdepth 1 -type f -name "*_R1.fastq.gz" -o -name "*_R2.fastq.gz" | sort)
-  # r1=""
-  # r2=""
-  # for read in "${reads[@]}"; do
-  #   if [[ "$read" =~ _R1\.fastq\.gz$ ]]; then r1="$read"; fi
-  #   if [[ "$read" =~ _R2\.fastq\.gz$ ]]; then r2="$read"; fi
-  # done
-  # if [[ -z "$r1" ]] || [[ -z "$r2" ]]; then
-  #   echo "SKIP  $sample  no paired-end files found"
-  #   continue
-  # fi
+  # For a different layout, replace only this discovery block and add a test
+  # using representative file names. The rest of the generator can stay the
+  # same.
 
   ######################################################################
   # EDIT THIS SECTION: check that the expected input file(s) exist
   ######################################################################
 
-  if [ ! -f "$f" ]; then
-    echo "SKIP  $sample  missing input: $f"
-    continue
+  missing_message=""
+  if [[ "$INPUT_MODE" == "single" ]] && [[ ! -f "$f" ]]; then
+    missing_message="missing input: $f"
+  elif [[ "$INPUT_MODE" == "paired-fixed" ]] \
+    && { [[ ! -f "$r1" ]] || [[ ! -f "$r2" ]]; }; then
+    missing_message="missing paired input: $r1 or $r2"
   fi
 
-  # Paired-end example:
-  # if [[ -z "$r1" ]] || [[ -z "$r2" ]] || [[ ! -f "$r1" ]] || [[ ! -f "$r2" ]]; then
-  #   echo "SKIP  $sample  missing or incomplete paired input"
-  #   continue
-  # fi
+  if [[ -n "$missing_message" ]]; then
+    echo "SKIP  $sample  $missing_message"
+    rm -f "$job"
+    n_missing=$((n_missing + 1))
+    continue
+  fi
 
   ######################################################################
   # Usually do not edit below here
@@ -156,24 +218,60 @@ while IFS= read -r -d '' sample_dir; do
 
   if [ "$should_run" -eq 0 ]; then
     echo "SKIP  $sample"
+    rm -f "$job"
+    n_status_skipped=$((n_status_skipped + 1))
     continue
   fi
+
+  # Values interpolated into the generated script must be shell-escaped.
+  # Without this, characters such as $, quotes, and backticks in paths are
+  # interpreted again when the generated job runs.
+  printf -v step_command_q '%q' "$STEP_COMMAND"
+  printf -v input_mode_q '%q' "$INPUT_MODE"
+  printf -v sample_q '%q' "$sample"
+  printf -v sample_dir_q '%q' "$sample_dir"
+  printf -v out_dir_q '%q' "$out_dir"
+  printf -v log_q '%q' "$log"
+  printf -v done_q '%q' "$done"
+  printf -v fail_q '%q' "$fail"
+  printf -v f_q '%q' "$f"
+  printf -v r1_q '%q' "$r1"
+  printf -v r2_q '%q' "$r2"
 
   cat >"$job" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 
-# For testing: preserve TEST_COMMAND if set
-TEST_COMMAND="${TEST_COMMAND:-}"
+STEP_COMMAND=$step_command_q
+input_mode=$input_mode_q
 
-sample="$sample"
-sample_dir="$sample_dir"
-out_dir="$out_dir"
-log="$log"
-done="$done"
-fail="$fail"
+sample=$sample_q
+sample_dir=$sample_dir_q
+out_dir=$out_dir_q
+log=$log_q
+done=$done_q
+fail=$fail_q
 
 mkdir -p "\$out_dir"
+lock_dir="\$out_dir/.running"
+if ! mkdir "\$lock_dir" 2>/dev/null; then
+  echo "BUSY  \$sample  another run is already active" >&2
+  exit 75
+fi
+
+job_complete=0
+cleanup_job() {
+  if [[ "\$job_complete" -ne 1 ]]; then
+    : >"\$fail"
+    rm -f "\$done"
+  fi
+  rmdir "\$lock_dir" 2>/dev/null || true
+}
+trap cleanup_job EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 rm -f "\$fail"
 rm -f "\$done"
 
@@ -181,35 +279,29 @@ rm -f "\$done"
 # Sample-specific input paths
 ########################################################################
 
-f="$f"
+f=$f_q
+r1=$r1_q
+r2=$r2_q
 
-# Paired fixed example:
-# r1="\$r1"
-# r2="\$r2"
+# Paired input paths are always defined. They are empty until the paired-input
+# assignments in the generator section are enabled.
 
 ########################################################################
 # Input validation
 ########################################################################
 
-if [ ! -f "\$f" ]; then
+if [[ "\$input_mode" == "single" ]] && [[ ! -f "\$f" ]]; then
   echo "FAIL  \$sample  missing input: \$f"
   : > "\$fail"
   exit 1
 fi
 
-# Paired-end example:
-# if [ ! -f "\$r1" ] || [ ! -f "\$r2" ]; then
-#   echo "FAIL  \$sample  missing paired input"
-#   : > "\$fail"
-#   exit 1
-# fi
-
-# Paired-end validation with empty check:
-# if [[ -z "\$r1" ]] || [[ -z "\$r2" ]] || [[ ! -f "\$r1" ]] || [[ ! -f "\$r2" ]]; then
-#   echo "FAIL  \$sample  missing or incomplete paired input"
-#   : > "\$fail"
-#   exit 1
-# fi
+if [[ "\$input_mode" == "paired-fixed" ]] \
+  && { [[ -z "\$r1" ]] || [[ -z "\$r2" ]] || [[ ! -f "\$r1" ]] || [[ ! -f "\$r2" ]]; }; then
+  echo "FAIL  \$sample  missing or incomplete paired input"
+  : > "\$fail"
+  exit 1
+fi
 
 echo "START \$sample"
 
@@ -224,59 +316,26 @@ if {
   # EDIT THIS SECTION: put the real command here
   ######################################################################
 
-  # For testing: use TEST_COMMAND if set (not for production use)
-  if [[ -n "\${TEST_COMMAND:-}" ]]; then
-    \$TEST_COMMAND "\$out_dir" "\$f" "\$sample"
+  # Keep tool-specific logic in a separate executable so it can be run and
+  # tested independently. See examples/runnable-single and runnable-paired.
+  if [[ -z "\${STEP_COMMAND:-}" ]]; then
+    echo "No STEP_COMMAND configured. Set it to an executable for this workflow step." >&2
+    exit 2
+  elif [[ "\$input_mode" == "single" ]]; then
+    "\$STEP_COMMAND" "\$out_dir" "\$f" "\$sample"
   else
-    # Replace this placeholder with your real workflow command.
-    your_tool --input "\$f" --output "\$out_dir/result.txt"
+    "\$STEP_COMMAND" "\$out_dir" "\$r1" "\$r2" "\$sample"
   fi
-
-  # Example: plain local command with Quast
-  # quast -o "\$out_dir" "\$f"
-
-  # Example: Docker version of a generic command
-  # docker run --rm \
-  #   -v "\$(pwd)":/work \
-  #   -u "\$(id -u)":"\$(id -g)" \
-  #   -w /work \
-  #   my-tool-image:latest \
-  #   your_tool --input "\$f" --output "\$out_dir/result.txt"
-
-  # Example: Docker version with Quast
-  # docker run --rm \
-  #   -v "\$(pwd)":/work \
-  #   -u "\$(id -u)":"\$(id -g)" \
-  #   -w /work \
-  #   quay.io/biocontainers/quast:5.2.0--py310pl5321hc8f18ef_2 \
-  #   quast -o "\$out_dir" "\$f"
-
-  # Example: paired-end command
-  # fastp \
-  #   -i "\$r1" \
-  #   -I "\$r2" \
-  #   -o "\$out_dir/R1.fastq.gz" \
-  #   -O "\$out_dir/R2.fastq.gz"
-
-  # Example: paired-end Docker command
-  # docker run --rm \
-  #   -v "\$(pwd)":/work \
-  #   -u "\$(id -u)":"\$(id -g)" \
-  #   -w /work \
-  #   quay.io/biocontainers/fastp:0.23.4--h5f740d0_3 \
-  #   fastp \
-  #   -i "\$r1" \
-  #   -I "\$r2" \
-  #   -o "\$out_dir/R1.fastq.gz" \
-  #   -O "\$out_dir/R2.fastq.gz"
 
 } >"\$log" 2>&1; then
   : > "\$done"
   rm -f "\$fail"
+  job_complete=1
   echo "DONE  \$sample"
   exit 0
 else
   : > "\$fail"
+  job_complete=1
   echo "FAIL  \$sample  see \$log"
   exit 1
 fi
@@ -284,13 +343,20 @@ EOF
 
   chmod +x "$job"
   echo "$job" >>"$LIST"
+  n_jobs=$((n_jobs + 1))
   echo "ADD   $sample  $job"
-done < <(find "$IN" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+done < <(find -L "$IN" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
 
-n_jobs=$(wc -l <"$LIST" | tr -d ' ')
 echo
 echo "Summary:"
 echo "  Total samples: $n_total"
 echo "  Jobs created:  $n_jobs"
+echo "  Missing input: $n_missing"
+echo "  Status skipped: $n_status_skipped"
 echo "  Job dir:       $JOB_DIR"
 echo "  Run list:      $LIST"
+
+if [[ "$STRICT" -eq 1 ]] && [[ "$n_missing" -gt 0 ]]; then
+  echo "Error: STRICT=1 and $n_missing sample(s) were missing input" >&2
+  exit 1
+fi

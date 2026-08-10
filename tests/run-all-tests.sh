@@ -4,7 +4,12 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if ((BASH_VERSINFO[0] < 4)); then
+  echo "Error: the test suite requires Bash 4 or newer (found $BASH_VERSION)" >&2
+  exit 2
+fi
+
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/lib/test-helpers.sh"
 
 usage() {

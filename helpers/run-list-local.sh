@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ((BASH_VERSINFO[0] < 4)); then
+  echo "Error: step-by-sample requires Bash 4 or newer (found $BASH_VERSION)" >&2
+  exit 2
+fi
+
 usage() {
   cat <<'EOF'
 Usage:

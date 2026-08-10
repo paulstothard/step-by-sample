@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if ((BASH_VERSINFO[0] < 4)); then
+  echo "Error: step-by-sample requires Bash 4 or newer (found $BASH_VERSION)" >&2
+  exit 2
+fi
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -115,13 +120,33 @@ if [[ ! -f "$LIST" ]]; then
   exit 1
 fi
 
+LIST="$(CDPATH='' cd -- "$(dirname -- "$LIST")" && pwd -P)/$(basename -- "$LIST")"
+
 if [[ -n "$SETUP_FILE" ]]; then
   if [[ ! -f "$SETUP_FILE" ]]; then
     echo "Error: setup file not found: $SETUP_FILE" >&2
     exit 1
   fi
-  SETUP_FILE="$(cd "$(dirname "$SETUP_FILE")" && pwd)/$(basename "$SETUP_FILE")"
+  SETUP_FILE="$(CDPATH='' cd -- "$(dirname -- "$SETUP_FILE")" && pwd -P)/$(basename -- "$SETUP_FILE")"
 fi
+
+if ! [[ "$CPUS" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Error: --cpus must be a positive integer" >&2
+  exit 1
+fi
+
+if ! [[ "$ARRAY_MAX" =~ ^[1-9][0-9]*$ ]]; then
+  echo "Error: --array-max must be a positive integer" >&2
+  exit 1
+fi
+
+for value_name in ACCOUNT PARTITION TIME MEM LOG_DIR KEEP_SCRIPT; do
+  value="${!value_name}"
+  if [[ "$value" == *$'\n'* ]] || [[ "$value" == *$'\r'* ]]; then
+    echo "Error: $value_name cannot contain newlines" >&2
+    exit 1
+  fi
+done
 
 mapfile -t scripts < <(grep -Ev '^[[:space:]]*($|#)' "$LIST")
 
@@ -143,11 +168,14 @@ if ! command -v sbatch >/dev/null 2>&1; then
 fi
 
 mkdir -p "$LOG_DIR"
+LOG_DIR="$(CDPATH='' cd -- "$LOG_DIR" && pwd -P)"
 
 SUBMIT_DIR="$(pwd)"
 N="${#scripts[@]}"
 
 if [[ -n "$KEEP_SCRIPT" ]]; then
+  mkdir -p "$(dirname -- "$KEEP_SCRIPT")"
+  KEEP_SCRIPT="$(CDPATH='' cd -- "$(dirname -- "$KEEP_SCRIPT")" && pwd -P)/$(basename -- "$KEEP_SCRIPT")"
   SBATCH_SCRIPT="$KEEP_SCRIPT"
 else
   tmp_base="${TMPDIR:-/tmp}"
@@ -159,6 +187,10 @@ ACCOUNT_LINE=""
 PARTITION_LINE=""
 MODULE_REQUESTED=0
 MODULE_LOAD_LINES=""
+
+printf -v submit_dir_q '%q' "$SUBMIT_DIR"
+printf -v list_q '%q' "$LIST"
+printf -v setup_file_q '%q' "$SETUP_FILE"
 
 if [[ -n "$ACCOUNT" ]]; then
   ACCOUNT_LINE="#SBATCH --account=$ACCOUNT"
@@ -188,10 +220,10 @@ $PARTITION_LINE
 
 set -euo pipefail
 
-cd "$SUBMIT_DIR"
+cd $submit_dir_q
 
-LIST="$LIST"
-SETUP_FILE="$SETUP_FILE"
+LIST=$list_q
+SETUP_FILE=$setup_file_q
 MODULE_REQUESTED="$MODULE_REQUESTED"
 script=\$(grep -Ev '^[[:space:]]*($|#)' "\$LIST" | sed -n "\${SLURM_ARRAY_TASK_ID}p")
 

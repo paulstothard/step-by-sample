@@ -1,0 +1,39 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Bash and ShellCheck on Ubuntu
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bash shellcheck
+
+      - name: Install Bash and ShellCheck on macOS
+        if: runner.os == 'macOS'
+        run: brew install bash shellcheck
+
+      - name: Run ShellCheck
+        run: git ls-files '*.sh' | xargs shellcheck -x -S warning
+
+      - name: Run tests with a noisy CDPATH
+        env:
+          CDPATH: ".:${{ runner.temp }}"
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            "$(brew --prefix bash)/bin/bash" tests/run-all-tests.sh
+          else
+            bash tests/run-all-tests.sh
+          fi

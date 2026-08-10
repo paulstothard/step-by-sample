@@ -4,11 +4,11 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/lib/test-helpers.sh"
 source "$SCRIPT_DIR/lib/mock-commands.sh"
 
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
 TEMPLATE="$PROJECT_ROOT/examples/build-jobs-template.sh"
 
 print_header "Testing Workflow Template + Execution Helpers"
@@ -276,6 +276,29 @@ if echo "$output" | grep -q "Submitted batch job"; then
     && pass_test
 else
   fail_test "Slurm setup-file submission failed"
+fi
+
+#############################################################################
+# Test 9: Unconfigured copied template fails clearly
+#############################################################################
+start_test "Unconfigured template fails with an actionable message"
+
+IN="$TEST_DIR/test9_in"
+OUT="$TEST_DIR/test9_out"
+JOB_DIR="$TEST_DIR/test9_jobs"
+LIST="$TEST_DIR/test9_list.txt"
+mkdir -p "$IN/sample1"
+echo "data" >"$IN/sample1/input.dat"
+
+IN="$IN" OUT="$OUT" JOB_DIR="$JOB_DIR" LIST="$LIST" MODE=all \
+  bash "$TEMPLATE" >/dev/null
+
+if bash "$JOB_DIR/sample1.sh" >/dev/null 2>&1; then
+  fail_test "An unconfigured template job should not report success"
+else
+  assert_file_exists "$OUT/sample1/.failed" \
+    && assert_log_contains "$OUT/sample1/run.log" "No STEP_COMMAND configured" \
+    && pass_test
 fi
 
 # Print summary

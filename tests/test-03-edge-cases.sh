@@ -1,343 +1,261 @@
 #!/usr/bin/env bash
-# Test edge cases and robust handling
-# Tests spaces in filenames, special characters, unusual conditions
+# Exercise edge cases against the real workflow template and helper scripts.
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/lib/test-helpers.sh"
+source "$SCRIPT_DIR/lib/mock-commands.sh"
 
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
+TEMPLATE="$PROJECT_ROOT/examples/build-jobs-template.sh"
 
 print_header "Testing Edge Cases and Robustness"
 
-# Setup
 setup_test_dir "edge-cases"
 trap cleanup_test_dir EXIT
 
-# Helper to create test script (simple version for edge case testing)
-create_simple_script() {
-  local script_path="$1"
+MOCK_BIN="$TEST_DIR/mock-bin"
+mkdir -p "$MOCK_BIN"
+
+for mock_func in mock_success mock_fail mock_conditional_fail mock_slow; do
+  cat >"$MOCK_BIN/$mock_func" <<MOCK_EOF
+#!/usr/bin/env bash
+source "$SCRIPT_DIR/lib/mock-commands.sh"
+$mock_func "\$@"
+MOCK_EOF
+  chmod +x "$MOCK_BIN/$mock_func"
+done
+
+run_template() {
+  local test_command="$1"
   local in_dir="$2"
   local out_dir="$3"
+  local job_dir="$4"
+  local list="$5"
+  local mode="${6:-all}"
+  local force="${7:-0}"
+  local strict="${8:-0}"
 
-  cat >"$script_path" <<'SCRIPT_EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-IN="INPUT_DIR"
-OUT="OUTPUT_DIR"
-JOBS=2
-
-mkdir -p "$OUT"
-
-run_one() {
-  sample_dir="$1"
-  sample="$(basename "$sample_dir")"
-  out_dir="$OUT/$sample"
-  log="$out_dir/run.log"
-  done="$out_dir/.done"
-  fail="$out_dir/.failed"
-
-  mkdir -p "$out_dir"
-  rm -f "$fail"
-
-  if [[ -f "$done" ]]; then
-    echo "SKIP  $sample"
-    return 0
-  fi
-
-  f="$sample_dir/data.txt"
-
-  if [[ ! -f "$f" ]]; then
-    echo "FAIL  $sample  missing input"
-    : > "$fail"
-    return 1
-  fi
-
-  echo "START $sample"
-
-  {
-    echo "=== $sample ==="
-    echo "Processing: $sample"
-    echo "SUCCESS" > "$out_dir/result.txt"
-  } >"$log" 2>&1
-
-  : > "$done"
-  echo "DONE  $sample"
-  return 0
-}
-
-export OUT
-export -f run_one
-
-mapfile -d '' -t sample_dirs < <(find -L "$IN" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
-printf '%s\0' "${sample_dirs[@]}" | xargs -0 -I{} -P "$JOBS" bash -c 'run_one "$@"' _ {}
-SCRIPT_EOF
-
-  sed -i.bak "s|INPUT_DIR|$in_dir|g" "$script_path"
-  sed -i.bak "s|OUTPUT_DIR|$out_dir|g" "$script_path"
-  rm -f "$script_path.bak"
-  chmod +x "$script_path"
+  PATH="$MOCK_BIN:$PATH" \
+    TEST_COMMAND="$test_command" \
+    IN="$in_dir" \
+    OUT="$out_dir" \
+    JOB_DIR="$job_dir" \
+    LIST="$list" \
+    MODE="$mode" \
+    FORCE="$force" \
+    STRICT="$strict" \
+    bash "$TEMPLATE"
 }
 
 #############################################################################
-# Test 1: Spaces in sample names
-#############################################################################
-start_test "Handles spaces in sample directory names"
+start_test "Relative paths work with a noisy CDPATH"
 
-IN="$TEST_DIR/test1_in"
-OUT="$TEST_DIR/test1_out"
-SCRIPT="$TEST_DIR/test1.sh"
+WORK="$TEST_DIR/test1_work"
+mkdir -p "$WORK/input/sample1"
+echo "data" >"$WORK/input/sample1/data.txt"
 
-# Create samples with spaces
-mkdir -p "$IN/sample one"
-mkdir -p "$IN/sample two three"
-echo "data" >"$IN/sample one/data.txt"
-echo "data" >"$IN/sample two three/data.txt"
-
-create_simple_script "$SCRIPT" "$IN" "$OUT"
-
-if bash "$SCRIPT" >/dev/null 2>&1; then
-  assert_file_exists "$OUT/sample one/.done" \
-    && assert_file_exists "$OUT/sample two three/.done" \
-    && assert_count_equals "$(count_done "$OUT")" 2 "Both samples should complete" \
+if (
+  cd "$WORK"
+  CDPATH=".:$TEST_DIR" \
+    PATH="$MOCK_BIN:$PATH" \
+    TEST_COMMAND=mock_success \
+    IN=input OUT=output JOB_DIR=jobs LIST=run.txt MODE=all \
+    bash "$TEMPLATE" >/dev/null 2>&1
+); then
+  assert_file_exists "$WORK/run.txt" \
+    && assert_file_exists "$WORK/jobs/sample1.sh" \
     && pass_test
 else
-  fail_test "Failed with spaces in sample names"
+  fail_test "Template failed with relative paths and CDPATH"
 fi
 
 #############################################################################
-# Test 2: Special characters in sample names
-#############################################################################
-start_test "Handles special characters in sample names"
+start_test "Generated jobs preserve shell metacharacters in sample names"
 
 IN="$TEST_DIR/test2_in"
 OUT="$TEST_DIR/test2_out"
-SCRIPT="$TEST_DIR/test2.sh"
+JOB_DIR="$TEST_DIR/test2_jobs"
+LIST="$TEST_DIR/test2_list.txt"
+special_names=('sample one' 'sample$HOME' 'sample"quote' 'sample`tick')
 
-# Create samples with special chars (avoiding / and null)
-mkdir -p "$IN/sample-dash"
-mkdir -p "$IN/sample_underscore"
-mkdir -p "$IN/sample.dot"
-echo "data" >"$IN/sample-dash/data.txt"
-echo "data" >"$IN/sample_underscore/data.txt"
-echo "data" >"$IN/sample.dot/data.txt"
+create_mock_samples "$IN" single "${special_names[@]}"
+run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
 
-create_simple_script "$SCRIPT" "$IN" "$OUT"
+syntax_ok=1
+while IFS= read -r job; do
+  bash -n "$job" || syntax_ok=0
+done <"$LIST"
 
-if bash "$SCRIPT" >/dev/null 2>&1; then
-  assert_count_equals "$(count_done "$OUT")" 3 "All 3 samples should complete" \
+if [[ "$syntax_ok" -eq 1 ]] \
+  && bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 2 >/dev/null 2>&1; then
+  checks_ok=1
+  for sample in "${special_names[@]}"; do
+    [[ -f "$OUT/$sample/.done" ]] || checks_ok=0
+  done
+  assert_equals "$checks_ok" 1 "Every exact sample name should complete" \
     && pass_test
 else
-  fail_test "Failed with special characters"
+  fail_test "A generated job was invalid or failed to run"
 fi
 
 #############################################################################
-# Test 3: Large number of samples
-#############################################################################
-start_test "Handles many samples (50 samples)"
+start_test "Real template handles fifty samples"
 
 IN="$TEST_DIR/test3_in"
 OUT="$TEST_DIR/test3_out"
-SCRIPT="$TEST_DIR/test3.sh"
+JOB_DIR="$TEST_DIR/test3_jobs"
+LIST="$TEST_DIR/test3_list.txt"
+create_mock_samples "$IN" 50 single
 
-# Create 50 samples
-for i in $(seq 1 50); do
-  mkdir -p "$IN/sample_$i"
-  echo "data" >"$IN/sample_$i/data.txt"
-done
+run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
+bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 8 >/dev/null 2>&1
 
-create_simple_script "$SCRIPT" "$IN" "$OUT"
-
-if bash "$SCRIPT" >/dev/null 2>&1; then
-  n_done=$(count_done "$OUT")
-  assert_count_equals "$n_done" 50 "All 50 samples should complete" \
-    && pass_test
-else
-  fail_test "Failed with 50 samples"
-fi
+assert_count_equals "$(count_done "$OUT")" 50 "All fifty samples should complete" \
+  && pass_test
 
 #############################################################################
-# Test 4: Empty sample directory (no input files)
-#############################################################################
-start_test "Handles empty sample directories gracefully"
+start_test "STRICT mode rejects missing sample inputs"
 
 IN="$TEST_DIR/test4_in"
 OUT="$TEST_DIR/test4_out"
-SCRIPT="$TEST_DIR/test4.sh"
+JOB_DIR="$TEST_DIR/test4_jobs"
+LIST="$TEST_DIR/test4_list.txt"
+create_mock_samples "$IN" single good
+create_mock_samples "$IN" empty missing
 
-mkdir -p "$IN/empty_sample"
-# No data.txt file created
-
-create_simple_script "$SCRIPT" "$IN" "$OUT"
-
-bash "$SCRIPT" >/dev/null 2>&1 || true
-
-assert_count_equals "$(count_done "$OUT")" 0 "Should not complete" \
-  && assert_count_equals "$(count_failed "$OUT")" 1 "Should mark as failed" \
-  && pass_test
+if output=$(run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all 0 1 2>&1); then
+  fail_test "STRICT=1 should fail when an input is missing"
+else
+  if grep -q "Missing input: 1" <<<"$output" \
+    && grep -q "STRICT=1" <<<"$output" \
+    && [[ $(wc -l <"$LIST" | tr -d ' ') -eq 1 ]]; then
+    pass_test
+  else
+    fail_test "Strict-mode output did not identify the missing sample"
+  fi
+fi
 
 #############################################################################
-# Test 5: Mixed success and failure
-#############################################################################
-start_test "Handles mix of successful and failed samples"
+start_test "Symlinked sample directories are processed"
 
 IN="$TEST_DIR/test5_in"
 OUT="$TEST_DIR/test5_out"
-SCRIPT="$TEST_DIR/test5.sh"
+JOB_DIR="$TEST_DIR/test5_jobs"
+LIST="$TEST_DIR/test5_list.txt"
+REAL="$TEST_DIR/test5_real/sample-link"
+mkdir -p "$REAL" "$IN"
+echo "data" >"$REAL/data.txt"
+ln -s "$REAL" "$IN/sample-link"
 
-# Create some with data, some without
-mkdir -p "$IN/sample_ok1" "$IN/sample_fail" "$IN/sample_ok2"
-echo "data" >"$IN/sample_ok1/data.txt"
-# sample_fail has no data.txt
-echo "data" >"$IN/sample_ok2/data.txt"
+run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
+bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 1 >/dev/null 2>&1
 
-create_simple_script "$SCRIPT" "$IN" "$OUT"
-
-bash "$SCRIPT" >/dev/null 2>&1 || true
-
-assert_count_equals "$(count_done "$OUT")" 2 "2 should succeed" \
-  && assert_count_equals "$(count_failed "$OUT")" 1 "1 should fail" \
+assert_file_exists "$OUT/sample-link/.done" \
   && pass_test
 
 #############################################################################
-# Test 6: Nested directories in sample folder
-#############################################################################
-start_test "Handles nested directories within samples"
+start_test "Run lists ignore comments and blank lines"
 
 IN="$TEST_DIR/test6_in"
 OUT="$TEST_DIR/test6_out"
-SCRIPT="$TEST_DIR/test6.sh"
+JOB_DIR="$TEST_DIR/test6_jobs"
+LIST="$TEST_DIR/test6_list.txt"
+DECORATED_LIST="$TEST_DIR/test6_decorated.txt"
+create_mock_samples "$IN" single s1 s2
+run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
 
-mkdir -p "$IN/sample1/subdir"
-echo "data" >"$IN/sample1/data.txt"
-echo "other" >"$IN/sample1/subdir/other.txt"
+{
+  echo "# generated jobs"
+  echo
+  sed '1a\
+# second job follows' "$LIST"
+} >"$DECORATED_LIST"
 
-create_simple_script "$SCRIPT" "$IN" "$OUT"
-
-if bash "$SCRIPT" >/dev/null 2>&1; then
-  assert_file_exists "$OUT/sample1/.done" \
-    && pass_test
-else
-  fail_test "Failed with nested directories"
-fi
+bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$DECORATED_LIST" 2 >/dev/null 2>&1
+assert_count_equals "$(count_done "$OUT")" 2 "Only runnable entries should execute" \
+  && pass_test
 
 #############################################################################
-# Test 7: Symlinks in input directory
-#############################################################################
-start_test "Handles symlinked sample directories"
+start_test "A per-sample lock prevents concurrent execution"
 
 IN="$TEST_DIR/test7_in"
 OUT="$TEST_DIR/test7_out"
-SCRIPT="$TEST_DIR/test7.sh"
-REAL_DIR="$TEST_DIR/test7_real"
+JOB_DIR="$TEST_DIR/test7_jobs"
+LIST="$TEST_DIR/test7_list.txt"
+create_mock_samples "$IN" single sample1
+run_template mock_slow "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
+job="$JOB_DIR/sample1.sh"
 
-# Create real directory
-mkdir -p "$REAL_DIR/real_sample"
-echo "data" >"$REAL_DIR/real_sample/data.txt"
+MOCK_SLOW_DURATION=1 bash "$job" >/dev/null 2>&1 &
+first_pid=$!
 
-# Create symlink
-mkdir -p "$IN"
-ln -s "$REAL_DIR/real_sample" "$IN/link_sample"
+for _ in $(seq 1 50); do
+  [[ -d "$OUT/sample1/.running" ]] && break
+  sleep 0.02
+done
 
-create_simple_script "$SCRIPT" "$IN" "$OUT"
+set +e
+second_output=$(bash "$job" 2>&1)
+second_status=$?
+set -e
+wait "$first_pid"
 
-if bash "$SCRIPT" >/dev/null 2>&1; then
-  assert_file_exists "$OUT/link_sample/.done" \
-    && pass_test
+if [[ "$second_status" -eq 75 ]] \
+  && grep -q "BUSY" <<<"$second_output" \
+  && [[ -f "$OUT/sample1/.done" ]] \
+  && [[ ! -e "$OUT/sample1/.running" ]]; then
+  pass_test
 else
-  fail_test "Failed with symlinked directories"
+  fail_test "Concurrent execution was not rejected cleanly"
 fi
 
 #############################################################################
-# Test 8: Run-list with comments and blank lines
-#############################################################################
-start_test "run-list-local.sh handles comments and blank lines"
+start_test "Completed samples produce an empty unfinished run list"
 
 IN="$TEST_DIR/test8_in"
 OUT="$TEST_DIR/test8_out"
 JOB_DIR="$TEST_DIR/test8_jobs"
 LIST="$TEST_DIR/test8_list.txt"
+create_mock_samples "$IN" single sample1
+run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" all >/dev/null
+bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 1 >/dev/null 2>&1
+run_template mock_success "$IN" "$OUT" "$JOB_DIR" "$LIST" unfinished >/dev/null
 
-create_mock_samples "$IN" "single" "s1" "s2"
-mkdir -p "$JOB_DIR"
-
-# Create job scripts
-for sample in s1 s2; do
-  cat >"$JOB_DIR/$sample.sh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-mkdir -p "$OUT/$sample"
-touch "$OUT/$sample/.done"
-echo "SUCCESS" > "$OUT/$sample/run.log"
-EOF
-  chmod +x "$JOB_DIR/$sample.sh"
-done
-
-# Create run list with comments and blank lines
-cat >"$LIST" <<EOF
-# This is a comment
-$JOB_DIR/s1.sh
-
-# Another comment
-$JOB_DIR/s2.sh
-EOF
-
-if bash "$PROJECT_ROOT/helpers/run-list-local.sh" "$LIST" 2 >/dev/null 2>&1; then
-  assert_count_equals "$(count_done "$OUT")" 2 "Should process only actual job lines" \
-    && pass_test
-else
-  fail_test "run-list-local.sh failed with comments"
-fi
+assert_count_equals "$(wc -l <"$LIST" | tr -d ' ')" 0 "No completed sample should be listed" \
+  && assert_file_not_exists "$JOB_DIR/sample1.sh" "Stale job should be removed" \
+  && pass_test
 
 #############################################################################
-# Test 9: Very long sample names
-#############################################################################
-start_test "Handles long sample directory names"
+start_test "Invalid FORCE and STRICT values are rejected"
 
 IN="$TEST_DIR/test9_in"
-OUT="$TEST_DIR/test9_out"
-SCRIPT="$TEST_DIR/test9.sh"
+create_mock_samples "$IN" single sample1
 
-# Create sample with very long name
-LONG_NAME="sample_with_a_very_long_name_that_contains_many_characters_to_test_handling"
-mkdir -p "$IN/$LONG_NAME"
-echo "data" >"$IN/$LONG_NAME/data.txt"
-
-create_simple_script "$SCRIPT" "$IN" "$OUT"
-
-if bash "$SCRIPT" >/dev/null 2>&1; then
-  assert_file_exists "$OUT/$LONG_NAME/.done" \
-    && pass_test
+if run_template mock_success "$IN" "$TEST_DIR/test9_out" "$TEST_DIR/test9_jobs" "$TEST_DIR/test9_list" all yes 0 >/dev/null 2>&1; then
+  fail_test "Invalid FORCE value was accepted"
+elif run_template mock_success "$IN" "$TEST_DIR/test9_out" "$TEST_DIR/test9_jobs" "$TEST_DIR/test9_list" all 0 yes >/dev/null 2>&1; then
+  fail_test "Invalid STRICT value was accepted"
 else
-  fail_test "Failed with long sample name"
+  pass_test
 fi
 
 #############################################################################
-# Test 10: Concurrent access to same sample (should be prevented)
-#############################################################################
-start_test "Multiple runs handle markers correctly"
+start_test "Status comparison reports samples without outputs"
 
 IN="$TEST_DIR/test10_in"
 OUT="$TEST_DIR/test10_out"
-SCRIPT="$TEST_DIR/test10.sh"
+mkdir -p "$IN/done" "$IN/pending" "$OUT/done"
+touch "$OUT/done/.done"
 
-create_mock_samples "$IN" "single" "sample1"
-create_simple_script "$SCRIPT" "$IN" "$OUT"
-
-# First run
-bash "$SCRIPT" >/dev/null 2>&1
-
-# Second run should skip already-done sample
-output=$(bash "$SCRIPT" 2>&1)
-
-if echo "$output" | grep -q "SKIP" || [[ $(count_done "$OUT") -eq 1 ]]; then
-  print_info "✓ Second run correctly handled completed sample"
+output=$(bash "$PROJECT_ROOT/helpers/summarize-status.sh" "$OUT" --input-dir "$IN")
+if grep -q "PENDING pending" <<<"$output" \
+  && grep -q "Done:    1" <<<"$output" \
+  && grep -q "Other:   1" <<<"$output"; then
   pass_test
 else
-  fail_test "Second run didn't handle completed sample correctly"
+  fail_test "Input-aware status summary missed the pending sample"
 fi
 
-# Print summary
 print_test_summary "${BASH_SOURCE[0]}"

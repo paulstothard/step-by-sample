@@ -73,7 +73,7 @@ to_absolute_path() {
   if [[ "$path" = /* ]]; then
     echo "$path"
   elif [[ -e "$path" ]]; then
-    echo "$(cd "$(dirname "$path")" && pwd)/$(basename "$path")"
+    echo "$(CDPATH='' cd -- "$(dirname -- "$path")" && pwd -P)/$(basename -- "$path")"
   else
     # Path doesn't exist yet, try to resolve directory
     local dir
@@ -81,7 +81,7 @@ to_absolute_path() {
     dir="$(dirname "$path")"
     base="$(basename "$path")"
     if [[ -d "$dir" ]]; then
-      echo "$(cd "$dir" && pwd)/$base"
+      echo "$(CDPATH='' cd -- "$dir" && pwd -P)/$base"
     else
       # Can't resolve, return as-is
       echo "$path"
@@ -117,7 +117,7 @@ validate_input_dir() {
 # Usage: n_samples=$(count_samples "$IN")
 count_samples() {
   local in_dir="$1"
-  find "$in_dir" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' '
+  find -L "$in_dir" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' '
 }
 
 # Format elapsed time in seconds to human-readable format

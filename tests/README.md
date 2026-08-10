@@ -52,6 +52,7 @@ tests/
 ├── test-02-helpers.sh        # Helper utility tests
 ├── test-03-edge-cases.sh     # Edge cases and robustness
 ├── test-04-reruns.sh         # Rerun and recovery behavior
+├── test-05-examples.sh       # Runnable examples
 └── README.md                 # This file
 ```
 
@@ -66,6 +67,7 @@ Validates the primary workflow template and execution helpers:
 - executes generated jobs locally,
 - rebuilds correctly with `MODE=unfinished` and `MODE=failed`,
 - writes `.failed` markers on job failure,
+- reports a clear failure when `STEP_COMMAND` has not been configured,
 - submits to mock Slurm,
 - applies Slurm setup files and module loads.
 
@@ -89,6 +91,10 @@ Covers robustness issues such as:
 - comment and blank-line handling in run lists,
 - repeated runs.
 
+These cases invoke the real workflow template. They also cover hostile
+`CDPATH` values, generated-script syntax, strict missing-input handling, and
+the per-sample concurrency lock.
+
 ### test-04-reruns.sh
 
 Covers recovery behavior:
@@ -99,6 +105,13 @@ Covers recovery behavior:
 - `repair-failed.sh`,
 - incremental rebuilds,
 - repeated rerun cycles.
+
+All rerun cases invoke the real workflow template rather than a test-only copy.
+
+### test-05-examples.sh
+
+Runs the single-input and paired-input examples end to end and verifies their
+documented outputs.
 
 ## Mock Commands
 
@@ -173,11 +186,11 @@ Use the real workflow template, not a copied script:
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/lib/test-helpers.sh"
 source "$SCRIPT_DIR/lib/mock-commands.sh"
 
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
 TEMPLATE="$PROJECT_ROOT/examples/build-jobs-template.sh"
 
 setup_test_dir "my-feature"

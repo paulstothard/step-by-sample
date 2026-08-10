@@ -10,6 +10,7 @@ slurm-logs/
 
 # Test artifacts
 tests/OUT_*/
+examples/runnable-*/work/
 
 # Status markers in root
 .done

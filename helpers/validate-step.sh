@@ -56,7 +56,7 @@ fi
 echo "✓ Input directory exists and is readable"
 
 # Count sample subdirectories
-n_dirs=$(find "$IN_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+n_dirs=$(find -L "$IN_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
 
 if [[ "$n_dirs" -eq 0 ]]; then
   echo "❌ ERROR: No sample subdirectories found in: $IN_DIR"
@@ -67,12 +67,12 @@ fi
 echo "✓ Found $n_dirs sample subdirectories"
 
 # Check for non-directory items at the sample level
-n_files=$(find "$IN_DIR" -mindepth 1 -maxdepth 1 ! -type d | wc -l | tr -d ' ')
+n_files=$(find -L "$IN_DIR" -mindepth 1 -maxdepth 1 ! -type d | wc -l | tr -d ' ')
 
 if [[ "$n_files" -gt 0 ]]; then
   echo "⚠ WARNING: Found $n_files non-directory items in $IN_DIR"
   echo "   These will be ignored during processing:"
-  find "$IN_DIR" -mindepth 1 -maxdepth 1 ! -type d | head -n 10
+  find -L "$IN_DIR" -mindepth 1 -maxdepth 1 ! -type d | head -n 10
   if [[ "$n_files" -gt 10 ]]; then
     echo "   ... and $((n_files - 10)) more"
   fi
@@ -89,25 +89,25 @@ while IFS= read -r sample_dir; do
     echo "   $(basename "$sample_dir")"
     empty_count=$((empty_count + 1))
   fi
-done < <(find "$IN_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
+done < <(find -L "$IN_DIR" -mindepth 1 -maxdepth 1 -type d | sort)
 
 if [[ "$empty_count" -gt 0 ]]; then
   echo "   Total: $empty_count empty directories"
 fi
 
 # Check for hidden directories (often unintentional)
-hidden_count=$(find "$IN_DIR" -mindepth 1 -maxdepth 1 -type d -name ".*" | wc -l | tr -d ' ')
+hidden_count=$(find -L "$IN_DIR" -mindepth 1 -maxdepth 1 -type d -name ".*" | wc -l | tr -d ' ')
 
 if [[ "$hidden_count" -gt 0 ]]; then
   echo "⚠ WARNING: Found $hidden_count hidden sample directories (starting with .)"
   echo "   These will be processed but might be unintentional:"
-  find "$IN_DIR" -mindepth 1 -maxdepth 1 -type d -name ".*" | head -n 5
+  find -L "$IN_DIR" -mindepth 1 -maxdepth 1 -type d -name ".*" | head -n 5
 fi
 
 # Display sample list
 echo
 echo "Sample directories ($n_dirs total):"
-find "$IN_DIR" -mindepth 1 -maxdepth 1 -type d | sort | head -n 20 | while read -r d; do
+find -L "$IN_DIR" -mindepth 1 -maxdepth 1 -type d | sort | head -n 20 | while read -r d; do
   echo "  - $(basename "$d")"
 done
 

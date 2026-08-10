@@ -28,7 +28,9 @@ Notes:
   - Only processes samples with .failed markers
   - Always preserves run.log for inspection
   - With --clean-outputs, removes .done, .failed, and all output files
-  - After repair, rebuild your run list with MODE="failed" or MODE="unfinished"
+  - After repair, rebuild your run list with MODE="unfinished"
+  - MODE="failed" will not select repaired samples because their .failed
+    markers have been removed
 EOF
 }
 
@@ -149,7 +151,7 @@ else
   echo
   if [[ "$repaired_count" -gt 0 ]]; then
     echo "Next steps:"
-    echo "  1. Rebuild run list with MODE=\"failed\" or MODE=\"unfinished\""
+    echo "  1. Rebuild run list with MODE=\"unfinished\""
     echo "  2. Execute the new run list"
     echo
     echo "Example:"
