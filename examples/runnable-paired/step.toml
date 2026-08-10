@@ -1,0 +1,12 @@
+[step]
+input_dir = "input-samples"
+output_dir = "work/output"
+job_dir = "work/jobs"
+run_list = "work/run.txt"
+command = "./process_pair.py"
+
+input_mode = "paired-fixed"
+r1_name = "R1.fastq"
+r2_name = "R2.fastq"
+mode = "unfinished"
+strict = true

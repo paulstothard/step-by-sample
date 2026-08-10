@@ -1,27 +1,31 @@
-# Job outputs
+# Generated workflow state
 jobs-*/
 run-*.txt
 *_output/
-
-# Slurm logs
 slurm-logs/
 *.out
 *.err
-
-# Test artifacts
-tests/OUT_*/
-examples/runnable-*/work/
-
-# Status markers in root
 .done
 .failed
 run.log
 
-# Temp files
+# Python development
+.coverage
+.pytest_cache/
+.ruff_cache/
+.venv/
+__pycache__/
+build/
+dist/
+*.egg-info/
+
+# Tests and examples
+tests/OUT_*/
+examples/*/work/
+
+# Editors and operating systems
 *.tmp
 *.temp
 .*.swp
-
-# OS files
 .DS_Store
 Thumbs.db

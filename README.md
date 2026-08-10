@@ -1,60 +1,166 @@
 # step-by-sample
 
-A Bash-first pattern for workflow steps that process one sample at a time:
+A small Python CLI for workflow steps that process one sample at a time.
 
-1. generate one job script per sample,
-2. collect those scripts in a run list,
-3. execute the same run list locally or as a Slurm array.
+```text
+step-by-sample init       create a step configuration
+step-by-sample validate   inspect sample inputs
+step-by-sample generate   create one job per sample
+step-by-sample run        execute jobs locally
+step-by-sample submit     submit the same jobs to Slurm
+step-by-sample status     summarize completion
+step-by-sample reset      prepare failed samples for rerun
+```
 
-Each sample writes `run.log` and ends with `.done` or `.failed` in its output
-directory. A transient `.running` lock prevents two copies of the same sample
-job from running at once. There is no workflow engine or background controller;
-the generated scripts, run list, logs, and markers are the complete state.
+The interface is one discoverable executable with typed options, shell
+completion, automatic color support, and clear errors. Each sample still gets
+an independent job, `run.log`, and explicit `.done` or `.failed` marker. There
+is no database or hidden controller: the generated jobs, run list, logs, and
+markers are the complete workflow state.
 
 ## Requirements
 
-- Bash 4 or newer,
-- standard Unix utilities including `find`, `sort`, `grep`, and `xargs`,
-- `sbatch` only when using Slurm.
+- Python 3.10 or newer,
+- Bash on execution nodes for the small generated job wrappers,
+- `sbatch` only when submitting to Slurm.
 
-On macOS, `/bin/bash` is normally Bash 3.2. Install a newer Bash and ensure it
-appears before `/bin` in `PATH`. The entry-point scripts report a clear version
-error when started with an older Bash.
+The orchestration no longer depends on a particular Bash version or Unix
+implementations of `find`, `sort`, `grep`, and `xargs`.
+
+## Install
+
+Install the command from a checkout with
+[uv](https://docs.astral.sh/uv/guides/tools/):
+
+```bash
+uv tool install .
+```
+
+Or use pipx:
+
+```bash
+pipx install .
+```
+
+For development, create the locked environment and run the command through uv:
+
+```bash
+uv sync --extra dev
+uv run step-by-sample --help
+```
 
 ## Quickstart
 
-Copy and edit the template:
+Create a configuration:
 
 ```bash
-cp templates/generate-jobs-template.sh generate-my-step-jobs.sh
+step-by-sample init step.toml
 ```
 
-Set `IN`, `OUT`, `JOB_DIR`, and `LIST`, configure the input layout, and set
-`STEP_COMMAND` to a tested executable for the step. Generate jobs:
+Edit `step.toml` for one workflow step:
 
-```bash
-./generate-my-step-jobs.sh
+```toml
+[step]
+input_dir = "input-samples"
+output_dir = "my-step-output"
+job_dir = "jobs-my-step"
+run_list = "run-my-step.txt"
+command = "./process_sample.py"
+
+input_mode = "single"
+input_name = "input.dat"
+mode = "unfinished"
+strict = true
 ```
 
-Every generation run rewrites the run list from the current inputs and selection
-mode.
-Inspect it before execution:
+All relative paths are resolved from the configuration file, not the current
+working directory. The command must be executable.
+
+Validate, generate, and run up to four samples locally:
 
 ```bash
-cat run-my-step.txt
-ls jobs-my-step/
+step-by-sample validate input-samples
+step-by-sample generate step.toml
+step-by-sample run run-my-step.txt --jobs 4
+step-by-sample status my-step-output --input-dir input-samples
 ```
 
-Run up to four samples locally:
+The run list contains absolute job paths, so it can be used from another
+working directory.
 
-```bash
-bin/run-jobs-local.sh run-my-step.txt 4
+## Input layouts
+
+The built-in layouts use one directory per sample:
+
+```text
+input-samples/
+  sample1/
+    input.dat
+  sample2/
+    input.dat
 ```
 
-Or submit the same list to Slurm:
+Single fixed-name input:
+
+```toml
+input_mode = "single"
+input_name = "input.dat"
+```
+
+Paired fixed-name input:
+
+```toml
+input_mode = "paired-fixed"
+r1_name = "R1.fastq.gz"
+r2_name = "R2.fastq.gz"
+```
+
+The configured executable receives stable positional arguments:
+
+```text
+single:       COMMAND OUT_DIR INPUT_FILE SAMPLE_NAME
+paired-fixed: COMMAND OUT_DIR R1_FILE R2_FILE SAMPLE_NAME
+```
+
+Keeping the scientific command separate makes it easy to run and test directly
+before generating hundreds of jobs. The command may be written in Python, R,
+Bash, or any other executable language.
+
+## Selecting samples
+
+The configured `mode` controls which jobs are generated:
+
+- `unfinished`: samples without `.done`, including new and previously failed samples;
+- `failed`: only samples with `.failed`;
+- `all`: every sample with the expected input.
+
+Override it for one generation run:
 
 ```bash
-bin/submit-jobs-slurm.sh run-my-step.txt \
+step-by-sample generate step.toml --mode failed
+step-by-sample generate step.toml --force
+```
+
+`strict = true` makes generation return nonzero when any expected input is
+missing. Valid jobs and the run list are still written so the problem is easy
+to inspect. Use `--no-strict` for a one-time override.
+
+## Local execution
+
+```bash
+step-by-sample run run-my-step.txt --jobs 4
+```
+
+Blank lines and lines beginning with `#` are ignored. The command validates
+every listed job before starting, displays progress in an interactive terminal,
+and returns nonzero if any sample fails.
+
+## Slurm arrays
+
+Submit the same run list as one array:
+
+```bash
+step-by-sample submit run-my-step.txt \
   --account my_account \
   --partition cpu \
   --time 08:00:00 \
@@ -63,239 +169,140 @@ bin/submit-jobs-slurm.sh run-my-step.txt \
   --array-max 20
 ```
 
-Compare outputs with the expected input samples:
+`--array-max` limits concurrent tasks, not the total number submitted. Cluster
+initialization and environment modules can be applied inside every task:
 
 ```bash
-bin/show-step-status.sh my-step-output --input-dir input-samples
-```
-
-## Folder convention
-
-```text
-input-samples/
-  sample1/
-    input.dat
-  sample2/
-    input.dat
-
-my-step-output/
-  sample1/
-    result.txt
-    run.log
-    .done
-  sample2/
-    result.txt
-    run.log
-    .failed
-```
-
-The run list contains absolute paths to the generated jobs, so it can be used
-from any working directory.
-
-## Configuring the template
-
-The main template is
-[templates/generate-jobs-template.sh](templates/generate-jobs-template.sh). Its common
-settings are:
-
-```bash
-IN=input-samples
-OUT=my-step-output
-JOB_DIR=jobs-my-step
-LIST=run-my-step.txt
-
-MODE=unfinished  # unfinished, failed, or all
-FORCE=0          # 1 overrides MODE and selects every sample
-STRICT=0         # 1 fails generation if any expected input is missing
-```
-
-`MODE=unfinished` selects anything without `.done`, including never-run and
-previously failed samples. `MODE=failed` selects only samples that currently
-have `.failed`. `FORCE=1` selects everything.
-
-### Fixed-name inputs
-
-The template directly supports single and paired fixed-name layouts:
-
-```bash
-# sample1/input.dat
-INPUT_MODE=single
-INPUT_NAME=input.dat
-
-# sample1/R1.fastq.gz and sample1/R2.fastq.gz
-INPUT_MODE=paired-fixed
-R1_NAME=R1.fastq.gz
-R2_NAME=R2.fastq.gz
-```
-
-The clearly marked input-discovery block can be edited for variable file names
-or other layouts.
-
-### External step commands
-
-`STEP_COMMAND` can point to an executable instead of putting a long tool command
-inside the template. Generated jobs invoke it as:
-
-```text
-single:       STEP_COMMAND OUT_DIR INPUT_FILE SAMPLE_NAME
-paired-fixed: STEP_COMMAND OUT_DIR R1_FILE R2_FILE SAMPLE_NAME
-```
-
-Paths containing `/` are validated and converted to absolute paths during job
-generation, so the generated jobs still work from another directory.
-
-Values embedded in generated jobs are shell-escaped. Sample names may contain
-spaces and shell metacharacters; newlines are rejected because the run-list
-format is intentionally one path per line.
-
-## Runnable examples
-
-- [examples/runnable-single](examples/runnable-single) converts two text
-  samples to uppercase.
-- [examples/runnable-paired](examples/runnable-paired) counts reads in tiny
-  paired FASTQ fixtures.
-
-Both examples run without third-party bioinformatics tools and are tested end
-to end. Each README shows the generation, execution, status, and output inspection
-commands.
-
-## Execution commands
-
-### Local
-
-```bash
-bin/run-jobs-local.sh RUN_LIST [JOBS]
-```
-
-Blank lines and lines beginning with `#` are ignored. The command validates every
-listed script before starting work and returns nonzero if any sample job fails.
-
-### Slurm
-
-```bash
-bin/submit-jobs-slurm.sh RUN_LIST [options]
-```
-
-Useful options include `--account`, `--partition`, `--time`, `--mem`, `--cpus`,
-`--array-max`, and `--log-dir`. Cluster initialization can be applied inside
-every array task:
-
-```bash
-bin/submit-jobs-slurm.sh run-my-step.txt \
+step-by-sample submit run-my-step.txt \
   --setup-file /etc/profile.d/modules.sh \
   --module my-tool/1.2.3 \
   --module python/3.11
 ```
 
-`--array-max` limits concurrent tasks, not the total number submitted.
+Use `--keep-script array.sbatch` to retain the generated submission script at a
+specific location for inspection.
 
 ## Status and recovery
 
-Summarize output directories alone:
+Each successful sample has this shape:
 
-```bash
-bin/show-step-status.sh my-step-output
+```text
+my-step-output/
+  sample1/
+    result.txt
+    run.log
+    .done
 ```
 
-Supplying the input directory also reveals samples that never produced an
-output directory and stale outputs with no corresponding input:
+A failure has `.failed` instead. A transient `.running` directory prevents two
+copies of the same sample job from running simultaneously.
+
+Show failures, pending samples, conflicting markers, and unexpected outputs:
 
 ```bash
-bin/show-step-status.sh my-step-output --input-dir input-samples
+step-by-sample status my-step-output --input-dir input-samples
+step-by-sample status my-step-output --input-dir input-samples --all
 ```
 
-The summary reports done, failed, other, conflicting markers, and extra outputs.
-
-Rerun samples that still have `.failed`:
+Generate failed jobs directly:
 
 ```bash
-MODE=failed ./generate-my-step-jobs.sh
-bin/run-jobs-local.sh run-my-step.txt 4
+step-by-sample generate step.toml --mode failed
+step-by-sample run run-my-step.txt --jobs 4
 ```
 
-Optionally clean failed outputs first:
+Or clear failed markers first so they are selected as unfinished:
 
 ```bash
-bin/reset-failed-samples.sh my-step-output --clean-outputs
-MODE=unfinished ./generate-my-step-jobs.sh
-bin/run-jobs-local.sh run-my-step.txt 4
+step-by-sample reset my-step-output --dry-run
+step-by-sample reset my-step-output --clean-outputs
+step-by-sample generate step.toml --mode unfinished
 ```
 
-Repair removes `.failed`, so repaired samples must be selected with
-`MODE=unfinished`, not `MODE=failed`. `run.log` is preserved during cleanup for
-inspection, though the next run replaces it.
+Cleanup preserves `run.log`. It refuses to touch a sample with a `.running`
+lock unless `--force-busy` is explicitly supplied.
 
-## Utility commands
+## Runnable examples
 
-- `bin/validate-step-inputs.sh`: validate input-directory structure before generation.
-- `bin/show-step-status.sh`: report status, missing outputs, and conflicts.
-- `bin/reset-failed-samples.sh`: clear failed markers and optionally partial outputs.
-- `lib/common.sh`: internal functions sourced by templates and tests.
+- [examples/runnable-single](examples/runnable-single) converts two text samples
+  to uppercase.
+- [examples/runnable-paired](examples/runnable-paired) counts reads in tiny
+  paired FASTQ fixtures.
+
+Both use Python processing commands, require no bioinformatics software, and
+are tested end to end in a path containing spaces.
+
+## Terminal behavior
+
+Rich formatting and color are enabled automatically when the output is a
+compatible terminal. Redirected output remains plain. Set the standard
+`NO_COLOR` environment variable to disable color explicitly:
+
+```bash
+NO_COLOR=1 step-by-sample status my-step-output
+```
+
+Install completion for the current shell with:
+
+```bash
+step-by-sample --install-completion
+```
 
 ## Testing
 
-Run everything:
-
 ```bash
-tests/run-all-tests.sh
+uv sync --extra dev
+uv run ruff check src tests examples
+uv run pytest
 ```
 
-Other useful forms:
-
-```bash
-tests/run-all-tests.sh --verbose
-tests/run-all-tests.sh --quick
-tests/run-all-tests.sh 'test-03*'
-```
-
-The suite exercises the real template and commands, including:
-
-- local and mock-Slurm execution,
-- failed, unfinished, forced, repaired, and incremental reruns,
-- spaces and shell metacharacters in sample names,
-- relative paths with a noisy `CDPATH`,
-- symlinked inputs, missing inputs, and large sample counts,
-- concurrent starts of the same generated job,
-- both runnable examples.
-
-GitHub Actions runs the suite and ShellCheck on Linux and macOS. See
-[tests/README.md](tests/README.md) for test-author documentation.
+The suite covers configuration validation, local and mock-Slurm execution,
+failure recovery, paired inputs, rerun modes, shell metacharacters, concurrent
+locks, generated-script ShellCheck, and both runnable examples. GitHub Actions
+tests supported Python versions on Linux and macOS.
 
 ## Project structure
 
 ```text
 step-by-sample/
-├── README.md
-├── templates/
-│   └── generate-jobs-template.sh
-├── bin/
-│   ├── reset-failed-samples.sh
-│   ├── run-jobs-local.sh
-│   ├── show-step-status.sh
-│   ├── submit-jobs-slurm.sh
-│   └── validate-step-inputs.sh
-├── lib/
-│   └── common.sh
+├── pyproject.toml
+├── uv.lock
+├── src/step_by_sample/
+│   ├── cli.py
+│   ├── config.py
+│   ├── core.py
+│   └── models.py
 ├── examples/
 │   ├── runnable-single/
 │   └── runnable-paired/
 └── tests/
-    ├── run-all-tests.sh
-    ├── test-01-workflow.sh
-    ├── test-02-commands.sh
-    ├── test-03-edge-cases.sh
-    ├── test-04-reruns.sh
-    ├── test-05-examples.sh
-    ├── lib/
-    └── mock-slurm/
 ```
 
-## Operational notes
+## Why generated jobs still use Bash
 
-- Missing inputs are counted during generation; use `STRICT=1` when they should
-  make generation fail.
-- Generated jobs mark unexpected exits and handled signals as failed and remove
-  their lock on exit. `SIGKILL` cannot be trapped and may leave `.running`; after
-  confirming no process is active, remove that stale directory before rerunning.
-- Generated job directories and run lists are refreshed on every generation
-  run; stale jobs for samples skipped by the current mode are removed.
+Python now owns configuration, validation, paths, concurrency, state reporting,
+cleanup, and submission. The generated job wrapper remains a short standalone
+Bash file because Slurm can execute it without installing this package on every
+compute node, and it naturally launches arbitrary scientific commands. Its
+quoting and lifecycle behavior are generated centrally and tested rather than
+copied and edited by users.
+
+This project intentionally coordinates one independent workflow step. When a
+workflow needs dependencies between several steps, provenance across a graph,
+or automatic downstream scheduling, use a workflow engine such as Snakemake.
+
+## Migrating from the Bash interface
+
+The Python CLI replaces the previous public scripts:
+
+| Previous script | Python command |
+|---|---|
+| `templates/generate-jobs-template.sh` | `step-by-sample init` + `generate` |
+| `bin/run-jobs-local.sh` | `step-by-sample run` |
+| `bin/submit-jobs-slurm.sh` | `step-by-sample submit` |
+| `bin/show-step-status.sh` | `step-by-sample status` |
+| `bin/reset-failed-samples.sh` | `step-by-sample reset` |
+| `bin/validate-step-inputs.sh` | `step-by-sample validate` |
+
+Existing output markers and run-list files remain conceptually compatible. A
+TOML configuration replaces editing a generator script.

@@ -1,0 +1,11 @@
+[step]
+input_dir = "input-samples"
+output_dir = "work/output"
+job_dir = "work/jobs"
+run_list = "work/run.txt"
+command = "./process_sample.py"
+
+input_mode = "single"
+input_name = "input.txt"
+mode = "unfinished"
+strict = true
