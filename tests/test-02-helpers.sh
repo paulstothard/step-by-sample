@@ -8,6 +8,7 @@ SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 source "$SCRIPT_DIR/lib/test-helpers.sh"
 
 PROJECT_ROOT="$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd -P)"
+source "$PROJECT_ROOT/helpers/common.sh"
 
 print_header "Testing Helper Utilities"
 
@@ -141,8 +142,6 @@ assert_file_exists "$OUT/failed/.failed" "Failed marker should still exist after
 #############################################################################
 start_test "common.sh functions work correctly"
 
-source "$PROJECT_ROOT/helpers/common.sh"
-
 # Test validate_jobs
 if validate_jobs 4; then
   print_info "✓ validate_jobs accepts valid number"
@@ -170,8 +169,6 @@ assert_equals "$count" 3 "count_samples should return 3" \
 #############################################################################
 start_test "common.sh find_paired_reads works correctly"
 
-source "$PROJECT_ROOT/helpers/common.sh"
-
 IN="$TEST_DIR/test9_in"
 create_mock_samples "$IN" "paired" "sample1"
 
@@ -190,8 +187,6 @@ fi
 # Test 10: common.sh validate_paired_input function
 #############################################################################
 start_test "common.sh validate_paired_input catches problems"
-
-source "$PROJECT_ROOT/helpers/common.sh"
 
 OUT="$TEST_DIR/test10_out"
 mkdir -p "$OUT/test"
