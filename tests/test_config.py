@@ -12,12 +12,43 @@ from step_by_sample.models import InputMode, StepBySampleError
 
 runner = CliRunner()
 
+COMMAND_HELP = {
+    "init": "step-by-sample init step.toml",
+    "generate": "step-by-sample generate step.toml --mode unfinished",
+    "run": "step-by-sample run run-my-step.txt --jobs 4",
+    "submit": "step-by-sample submit run-my-step.txt",
+    "status": "step-by-sample status my-step-output",
+    "reset": "step-by-sample reset my-step-output --dry-run",
+    "validate": "step-by-sample validate input-samples",
+}
+
 
 def test_main_help_lists_unified_commands() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     for command in ("init", "generate", "run", "submit", "status", "reset", "validate"):
         assert command in result.stdout
+
+
+@pytest.mark.parametrize(("command", "example"), COMMAND_HELP.items())
+def test_every_command_has_help_and_an_example(command: str, example: str) -> None:
+    result = runner.invoke(app, [command, "--help"])
+    assert result.exit_code == 0
+    assert "Usage:" in result.stdout
+    assert "--help" in result.stdout
+    assert "Example:" in result.stdout
+    assert example in result.stdout
+
+
+def test_boolean_help_avoids_noisy_inverse_flags() -> None:
+    reset_help = runner.invoke(app, ["reset", "--help"])
+    status_help = runner.invoke(app, ["status", "--help"])
+    assert reset_help.exit_code == 0
+    assert status_help.exit_code == 0
+    assert "--no-dry-run" not in reset_help.stdout
+    assert "--no-clean-outputs" not in reset_help.stdout
+    assert "--no-force-busy" not in reset_help.stdout
+    assert "--no-fail-on-problems" not in status_help.stdout
 
 
 def test_version() -> None:

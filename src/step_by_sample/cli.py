@@ -63,7 +63,10 @@ def main(
     """A small, explicit workflow runner for local machines and Slurm clusters."""
 
 
-@app.command("init")
+@app.command(
+    "init",
+    epilog="Example: [bold]step-by-sample init step.toml[/bold]",
+)
 def init_command(
     config: Annotated[
         Path,
@@ -85,7 +88,9 @@ def init_command(
     console.print("  [bold cyan]step-by-sample generate[/bold cyan]", Text(str(created)))
 
 
-@app.command()
+@app.command(
+    epilog="Example: [bold]step-by-sample generate step.toml --mode unfinished[/bold]",
+)
 def generate(
     config: Annotated[
         Path,
@@ -93,7 +98,11 @@ def generate(
     ] = Path("step-by-sample.toml"),
     mode: Annotated[
         SelectionMode | None,
-        typer.Option("--mode", help="Override the configured sample selection mode."),
+        typer.Option(
+            "--mode",
+            metavar="MODE",
+            help="Override the configured sample selection mode.",
+        ),
     ] = None,
     force: Annotated[
         bool,
@@ -150,7 +159,10 @@ def generate(
         )
 
 
-@app.command("run")
+@app.command(
+    "run",
+    epilog="Example: [bold]step-by-sample run run-my-step.txt --jobs 4[/bold]",
+)
 def run_command(
     run_list: Annotated[Path, typer.Argument(help="Run list produced by generate.")],
     jobs: Annotated[
@@ -211,7 +223,12 @@ def run_command(
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(
+    epilog=(
+        "Example: [bold]step-by-sample submit run-my-step.txt "
+        "--partition cpu --time 08:00:00[/bold]"
+    ),
+)
 def submit(
     run_list: Annotated[Path, typer.Argument(help="Run list produced by generate.")],
     account: Annotated[str | None, typer.Option(help="Slurm account.")] = None,
@@ -278,7 +295,9 @@ _STATE_STYLE = {
 }
 
 
-@app.command()
+@app.command(
+    epilog=("Example: [bold]step-by-sample status my-step-output --input-dir input-samples[/bold]"),
+)
 def status(
     output_dir: Annotated[Path, typer.Argument(help="Per-sample output directory.")],
     input_dir: Annotated[
@@ -291,7 +310,10 @@ def status(
     ] = False,
     fail_on_problems: Annotated[
         bool,
-        typer.Option(help="Exit nonzero when failures or marker conflicts exist."),
+        typer.Option(
+            "--fail-on-problems",
+            help="Exit nonzero when failures or marker conflicts exist.",
+        ),
     ] = False,
 ) -> None:
     """Summarize sample completion markers and missing outputs."""
@@ -343,20 +365,28 @@ def status(
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(
+    epilog="Example: [bold]step-by-sample reset my-step-output --dry-run[/bold]",
+)
 def reset(
     output_dir: Annotated[Path, typer.Argument(help="Per-sample output directory.")],
     clean_outputs: Annotated[
         bool,
-        typer.Option(help="Remove partial outputs while preserving run.log."),
+        typer.Option(
+            "--clean-outputs",
+            help="Remove partial outputs while preserving run.log.",
+        ),
     ] = False,
     dry_run: Annotated[
         bool,
-        typer.Option(help="Preview changes without modifying files."),
+        typer.Option("--dry-run", help="Preview changes without modifying files."),
     ] = False,
     force_busy: Annotated[
         bool,
-        typer.Option(help="Reset samples even when a .running lock exists."),
+        typer.Option(
+            "--force-busy",
+            help="Reset samples even when a .running lock exists.",
+        ),
     ] = False,
 ) -> None:
     """Prepare failed samples to be selected again as unfinished."""
@@ -389,7 +419,9 @@ def reset(
         raise typer.Exit(1)
 
 
-@app.command()
+@app.command(
+    epilog="Example: [bold]step-by-sample validate input-samples[/bold]",
+)
 def validate(
     input_dir: Annotated[Path, typer.Argument(help="Directory containing one folder per sample.")],
 ) -> None:

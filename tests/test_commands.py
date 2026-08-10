@@ -34,6 +34,9 @@ def test_generate_cli_strict_mode_exits_nonzero(
     result = runner.invoke(app, ["generate", str(config)])
     assert result.exit_code == 1
     assert "MISSING" in result.stdout
+    assert "Generation summary" in result.stdout
+    assert "Jobs created" in result.stdout
+    assert "Run list:" in result.stdout
     assert "strict mode" in result.stdout + result.stderr
     assert (tmp_path / "run.txt").is_file()
 
@@ -49,6 +52,7 @@ def test_run_cli_reports_failures(
     assert result.exit_code == 1
     assert "FAILED" in result.stdout
     assert "intentional failure" in result.stdout
+    assert "Completed" in result.stdout
 
 
 def test_status_detects_pending_failed_conflict_and_extra(tmp_path: Path) -> None:
@@ -78,6 +82,8 @@ def test_status_detects_pending_failed_conflict_and_extra(tmp_path: Path) -> Non
     assert result.exit_code == 1
     assert "PENDING" in result.stdout
     assert "CONFLICT" in result.stdout
+    assert "Sample status" in result.stdout
+    assert "Summary" in result.stdout
 
 
 def test_reset_clean_outputs_preserves_log(tmp_path: Path) -> None:

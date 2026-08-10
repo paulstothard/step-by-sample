@@ -26,6 +26,8 @@ uv run pytest tests/test_commands.py::test_submit_creates_and_sends_slurm_array
   Slurm submission.
 - `test_examples.py`: both documented examples copied into and run from a path
   containing spaces.
+- `test_docs.py`: local documentation links, public-command coverage, and stale
+  architecture wording.
 
 Tests use real generated job scripts and real marker transitions. The Slurm
 test replaces only `sbatch`, capturing and inspecting the generated array

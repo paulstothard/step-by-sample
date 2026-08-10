@@ -242,6 +242,15 @@ compatible terminal. Redirected output remains plain. Set the standard
 NO_COLOR=1 step-by-sample status my-step-output
 ```
 
+The main command and every subcommand provide `-h`/`--help`, typed option
+descriptions, defaults, and a runnable example:
+
+```bash
+step-by-sample --help
+step-by-sample generate --help
+step-by-sample submit --help
+```
+
 Install completion for the current shell with:
 
 ```bash
